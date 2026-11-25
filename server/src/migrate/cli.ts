@@ -29,6 +29,7 @@ import { runReconcile } from "./reconcile.js";
 import { selectSample, type SampleSet } from "./sample.js";
 import { openLegacySource, type LegacySource } from "./source/index.js";
 import type { ListingShareReader } from "./source/shares.js";
+import { Refused } from "./state.js";
 import { openMigrationTarget } from "./target.js";
 import { runVerify } from "./verify.js";
 import { WipeRefused, wipeTarget } from "./wipe.js";
@@ -73,7 +74,11 @@ Options:
                         file's name); wipe refuses without it and without --target
   --help                Show this text
 
-Exit codes: 0 done or green, 1 failed or differences found, 2 usage error`;
+verify, delta and reconcile refuse (exit 2) a --sample or --include other than the copy's;
+delta and reconcile refuse a target whose copy has not finished. The report and the progress
+lines give each phase's duration.
+
+Exit codes: 0 done or green, 1 failed or differences found, 2 usage error or refused`;
 
 const COMMANDS = ["plan", "copy", "verify", "delta", "reconcile", "wipe"] as const;
 export type Command = (typeof COMMANDS)[number];
@@ -427,6 +432,7 @@ export async function run(
           deepSample: args.deepSample ?? 20,
           ...(args.deepMaxResponses !== null && { deepMaxResponses: args.deepMaxResponses }),
           report,
+          progress,
         }));
       } finally {
         await sourceProviders.close().catch(() => undefined);
@@ -453,6 +459,7 @@ export async function run(
     return ok ? 0 : 1;
   } catch (error) {
     if (error instanceof WipeRefused) return usage(`Refused: ${error.message}`);
+    if (error instanceof Refused) return usage(`Refused: ${error.message}. Nothing was changed.`);
     if (error instanceof ConfigError) return usage(`Error: ${error.message}`);
     io.err(`Error: ${safeErrorText(error)}\n`);
     return 1;

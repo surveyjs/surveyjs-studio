@@ -247,6 +247,11 @@ describe("migrate:hosted against the local replica", () => {
           verified.io,
         ),
       ).toBe(0);
+      // Without the copy's --sample and --include, the commands after it refuse.
+      const refused = capture();
+      expect(await cli(["reconcile", "--target", t.envFile], refused.io)).toBe(2);
+      expect(refused.err).toContain("Refused: the target holds a sample");
+      expect(await cli(["verify", "--target", t.envFile], capture().io)).toBe(2);
     } finally {
       await t.drop();
     }

@@ -6,6 +6,7 @@ import { sql, type Kysely } from "kysely";
 import type { SqlDialectName } from "../sql/database.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import { jsonOf, jsonText } from "../sql/values.js";
+import { sampleMismatch, type SampleSet, type StoredSample } from "./sample.js";
 
 export interface MigrationState {
   get<T>(key: string): Promise<T | null>;
@@ -56,4 +57,35 @@ export function createMigrationState(
       await db.deleteFrom("migration_state").execute();
     },
   };
+}
+
+/** A command refused before it changed anything (exit 2): the target does not fit it. */
+export class Refused extends Error {
+  override name = "Refused";
+}
+
+/** State key `sample`: the copy's sample (`StoredSample`), or null for a full copy. */
+export const SAMPLE = "sample";
+/** State key `copy:complete`: a copy finished a whole pass (`{ at }`). */
+export const COPY_COMPLETE = "copy:complete";
+
+/** Refuses a command whose `--sample`/`--include` differ from the copy's. */
+export async function requireSameSample(
+  state: MigrationState,
+  sample: SampleSet | undefined,
+): Promise<void> {
+  const why = sampleMismatch(await state.get<StoredSample>(SAMPLE), sample);
+  if (why !== null) throw new Refused(why);
+}
+
+/**
+ * Refuses `delta` and `reconcile` until a copy has finished a whole pass: what a stopped copy
+ * never reached (events, views, Studio's own files from before the marks) no delta reads.
+ */
+export async function requireCompleteCopy(state: MigrationState): Promise<void> {
+  if ((await state.get(COPY_COMPLETE)) === null) {
+    throw new Refused(
+      "no copy has finished in this target: run copy (again) until it ends with copy: done",
+    );
+  }
 }

@@ -8,6 +8,15 @@ export interface SampleSet {
   readonly accounts: ReadonlySet<string>;
   readonly surveys: ReadonlySet<string>;
   readonly projects: ReadonlySet<string>;
+  /**
+   * What picked it: the share and the listed ids (lower-case, sorted, each once). The sets grow as
+   * the source does; the selection does not, so the commands compare it with the copy's.
+   */
+  readonly selection?: SampleSelection;
+}
+export interface SampleSelection {
+  readonly share: number;
+  readonly include: readonly string[];
 }
 
 /**
@@ -32,7 +41,12 @@ export async function selectSample(
   share: number,
   include: readonly string[],
   report?: Report,
-): Promise<{ accounts: Set<string>; surveys: Set<string>; projects: Set<string> }> {
+): Promise<{
+  accounts: Set<string>;
+  surveys: Set<string>;
+  projects: Set<string>;
+  selection: SampleSelection;
+}> {
   const users = new Set<string>();
   const accounts = new Set<string>();
   for await (const row of source.users()) {
@@ -67,5 +81,53 @@ export async function selectSample(
       surveys.add(row.id.toLowerCase());
     }
   }
-  return { accounts, surveys, projects };
+  const listed = [...new Set(include.map((raw) => raw.trim().toLowerCase()))];
+  const selection = { share, include: listed.filter((one) => one !== "").sort() };
+  return { accounts, surveys, projects, selection };
+}
+
+/** The `sample` state a copy writes: its sets and its selection; null for a full copy. */
+export interface StoredSample {
+  accounts: string[];
+  surveys: string[];
+  projects: string[];
+  selection?: SampleSelection;
+}
+
+export const storedSampleOf = (sample: SampleSet | undefined): StoredSample | null =>
+  sample
+    ? {
+        accounts: [...sample.accounts].sort(),
+        surveys: [...sample.surveys].sort(),
+        projects: [...sample.projects].sort(),
+        ...(sample.selection && { selection: sample.selection }),
+      }
+    : null;
+
+/**
+ * Why a command's `--sample`/`--include` do not fit the copy's (the `sample` state; null: a full
+ * copy); null when they do. A sample command on a full target would remove or compare everything
+ * outside the sample; a full command on a sample target would grow it into a full copy.
+ */
+export function sampleMismatch(
+  stored: StoredSample | null,
+  sample: SampleSet | undefined,
+): string | null {
+  const describe = (s: StoredSample) =>
+    s.selection
+      ? `--sample ${s.selection.share} with ${s.selection.include.length} included accounts`
+      : `a sample of ${s.accounts.length} accounts`;
+  if (stored === null) {
+    return sample ? "the target holds a full copy: run without --sample and --include" : null;
+  }
+  if (!sample)
+    return `the target holds a sample (${describe(stored)}): pass the copy's --sample and --include`;
+  const same =
+    stored.selection && sample.selection
+      ? stored.selection.share === sample.selection.share &&
+        stored.selection.include.join(",") === sample.selection.include.join(",")
+      : stored.accounts.join(",") === [...sample.accounts].sort().join(",");
+  return same
+    ? null
+    : `the target holds another sample (${describe(stored)}): pass the copy's --sample and --include`;
 }
