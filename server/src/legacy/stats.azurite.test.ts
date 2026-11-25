@@ -1,10 +1,12 @@
+import { BlobServiceClient } from "@azure/storage-blob";
+import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { run } from "../cli/inspect-legacy.js";
 import { readLegacyFixtures, type LegacyFixtures } from "../providers/azure-legacy/fixtures.js";
 import { loadLegacyFixtures, type LoadSummary } from "./load-fixtures.js";
 import { replicaConfig, replicaEnv } from "./replica-env.js";
 import { measureLegacyStores } from "./stats-source.js";
-import type { StatsMeasurements } from "./stats.js";
+import { HISTORY_KEPT, newestHistory, type StatsMeasurements } from "./stats.js";
 
 // Runs in the `providers-azurite` Vitest project, against the local replica. The fixtures are
 // loaded again first: the loader resets each fixture table and container to the fixture, while
@@ -108,4 +110,51 @@ describe("inspect:legacy --stats on the replica", () => {
     expect(out.join("")).toMatch(/^Responses \(post\*\)\s+\d+ tables/m);
     for (const secret of Object.values(replicaConfig())) expect(text).not.toContain(secret);
   });
+});
+
+describe("the newest history entries per survey on the replica", () => {
+  it("counts a short survey whole, the newest 20 of a long one, and falls back to last-modified", async () => {
+    const config = replicaConfig();
+    const container = BlobServiceClient.fromConnectionString(
+      config.surveysStorageConnectionString,
+    ).getContainerClient("surveyjsonhistory");
+    await container.createIfNotExists();
+    const before = (await measureLegacyStores(config, { resultBytes: false })).historyKept;
+    expect(before).not.toBeNull();
+
+    const short = randomUUID();
+    const long = randomUUID();
+    const time = (n: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, n)).toISOString();
+    const expected: { surveyId: string; at: string; id: string; bytes: number }[] = [];
+    const write = async (surveyId: string, content: string, metadata?: Record<string, string>) => {
+      const id = randomUUID();
+      const blob = container.getBlockBlobClient(`${surveyId}/${id}`);
+      await blob.upload(content, content.length, { metadata });
+      return { id, blob };
+    };
+    for (let n = 0; n < 3; n++) {
+      const { id } = await write(short, "x".repeat(n + 1), { savedat: time(n) });
+      expected.push({ surveyId: short, at: time(n), id, bytes: n + 1 });
+    }
+    for (let n = 0; n < HISTORY_KEPT + 5; n++) {
+      const { id } = await write(long, "y".repeat(n + 1), { savedat: time(n) });
+      expected.push({ surveyId: long, at: time(n), id, bytes: n + 1 });
+    }
+    // Missing and malformed saved-at: the blob's last-modified time (now) is the newest.
+    for (const metadata of [undefined, { savedat: "not a time" }]) {
+      const { id, blob } = await write(long, "zz", metadata);
+      const props = await blob.getProperties();
+      expected.push({
+        surveyId: long,
+        at: props.lastModified!.toISOString(),
+        id,
+        bytes: 2,
+      });
+    }
+
+    const after = (await measureLegacyStores(config, { resultBytes: false })).historyKept;
+    const delta = newestHistory(expected);
+    expect(after!.entries - before!.entries).toBe(delta.entries);
+    expect(after!.bytes - before!.bytes).toBe(delta.bytes);
+  }, 60_000);
 });

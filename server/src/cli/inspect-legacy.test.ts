@@ -281,6 +281,7 @@ describe("run --stats (measure seam)", () => {
     },
     tables: [],
     containers: [],
+    historyKept: null,
     resultBytesMeasured: false,
   };
 
