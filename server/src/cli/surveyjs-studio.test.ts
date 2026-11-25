@@ -62,6 +62,13 @@ describe("surveyjs-studio command", () => {
     }
   });
 
+  it("does not list migrate-hosted in the self-hosted edition's usage", async () => {
+    const result = capture();
+    expect(await run(["--help"], result.io, { env: { APP_EDITION: "self-hosted" } })).toBe(0);
+    expect(result.out).toContain("  purge-deleted-responses");
+    expect(result.out).not.toContain("migrate-hosted");
+  });
+
   it("passes migrate-hosted on: its --help prints its own usage", async () => {
     const result = capture();
     expect(await run(["migrate-hosted", "--help"], result.io, { env: {} })).toBe(0);

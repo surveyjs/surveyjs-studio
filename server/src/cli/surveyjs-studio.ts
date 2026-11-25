@@ -1,11 +1,17 @@
 import { pathToFileURL } from "node:url";
 import { runBackup, runRestore } from "./backup.js";
 import type { CliEnv, CliIo } from "./common.js";
-import { run as runMigrateHosted } from "../migrate/cli.js";
 import { run as runDb } from "./db.js";
 import { run as runPurge } from "./purge-deleted-responses.js";
 import { run as runRebaseUrls } from "./rebase-urls.js";
 import { run as runS3Bucket } from "./s3-bucket.js";
+
+/** The hosted edition's command; the self-hosted image (`APP_EDITION=self-hosted`) does not list it. */
+const MIGRATE_HOSTED = `  migrate-hosted <command> [options]
+                                  The hosted edition only: copy the legacy data into this
+                                  database (plan, copy, verify, delta, reconcile, wipe); see
+                                  migrate-hosted --help
+`;
 
 export const USAGE = `Usage: surveyjs-studio <command> [options]
 
@@ -25,13 +31,14 @@ Commands:
   purge-deleted-responses --before <date> [--apply]
                                   Delete the archived copies of deleted responses (a dry run
                                   without --apply; SQL providers only)
-  migrate-hosted <command> [options]
-                                  Copy the legacy data into this database (plan, copy, verify,
-                                  delta, reconcile, wipe); see migrate-hosted --help
-
+${MIGRATE_HOSTED}
 Run surveyjs-studio <command> --help for a command's options.
 
 Exit codes: 0 success, 1 failure, 2 usage error`;
+
+/** The usage for the environment: without migrate-hosted in the self-hosted edition. */
+export const usage = (env: CliEnv): string =>
+  env.APP_EDITION === "self-hosted" ? USAGE.replace(MIGRATE_HOSTED, "") : USAGE;
 
 export interface SurveyjsStudioDeps {
   /** Default `process.env` (never changed). */
@@ -45,8 +52,9 @@ export async function run(
   deps: SurveyjsStudioDeps = {},
 ): Promise<number> {
   const [command, ...rest] = argv;
+  const text = usage(deps.env ?? process.env);
   if (command === "--help") {
-    io.out(USAGE + "\n");
+    io.out(text + "\n");
     return 0;
   }
   switch (command) {
@@ -62,15 +70,18 @@ export async function run(
       return runRebaseUrls(rest, io, deps);
     case "purge-deleted-responses":
       return runPurge(rest, io, deps);
-    case "migrate-hosted":
+    case "migrate-hosted": {
+      // Loaded only when asked for: the other commands need none of the legacy store clients.
+      const { run: runMigrateHosted } = await import("../migrate/cli.js");
       return runMigrateHosted(rest, io, deps);
+    }
     case "s3-bucket":
       return runS3Bucket(rest, io, { ...(deps.env ?? process.env) });
     case undefined:
-      io.err(`${USAGE}\n`);
+      io.err(`${text}\n`);
       return 2;
     default:
-      io.err(`Unknown command: ${command}\n\n${USAGE}\n`);
+      io.err(`Unknown command: ${command}\n\n${text}\n`);
       return 2;
   }
 }
