@@ -124,6 +124,28 @@ describe("the instance admin's user management", () => {
     };
   }
 
+  it("lists the site's block (hosted sign-in) apart from the status", async () => {
+    const { admin, as, accounts } = await start();
+    const blocked = await accounts.createAccount({
+      id: "aaaaaaaa-0000-4000-8000-0000000000b1",
+      email: "blake@example.com",
+      displayName: "Blake",
+      instanceRole: "user",
+      status: "active",
+      passwordHash: null,
+      mustChangePassword: false,
+      siteBlocked: true,
+      createdAt: "2026-10-29T10:00:00.000Z",
+    });
+    const listed = await as(admin, "GET", "/admin/users");
+    const items = listed.json<{ items: { id: string; status: string; siteBlocked: boolean }[] }>()
+      .items;
+    expect(items).toContainEqual(
+      expect.objectContaining({ id: blocked.user.id, status: "active", siteBlocked: true }),
+    );
+    expect(items.filter((item) => item.siteBlocked)).toHaveLength(1);
+  });
+
   it("creates a user with a one-time link that sets the password and makes them active", async () => {
     const { admin, as, setPassword, login } = await start();
     const created = await as(admin, "POST", "/admin/users", {
@@ -142,6 +164,7 @@ describe("the instance admin's user management", () => {
       instanceRole: "user",
       status: "invited",
       hasPassword: false,
+      siteBlocked: false,
       pendingLink: { purpose: "invitation", expiresAt: "2026-11-05T10:00:00.000Z" },
       lastSignInAt: null,
       createdAt: "2026-10-29T10:00:00.000Z",

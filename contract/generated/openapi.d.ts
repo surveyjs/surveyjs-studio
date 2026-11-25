@@ -1618,6 +1618,7 @@ export interface components {
          *       "instanceRole": "user",
          *       "status": "active",
          *       "hasPassword": false,
+         *       "siteBlocked": false,
          *       "pendingLink": {
          *         "purpose": "reset",
          *         "expiresAt": "2026-11-06T09:00:00.000Z"
@@ -1639,6 +1640,8 @@ export interface components {
             status: "invited" | "active" | "disabled";
             /** @description Whether the user has a password. `false` after a reset until they use the new link. */
             hasPassword: boolean;
+            /** @description Hosted edition: surveyjs.io blocks the account, as its last sign-in said. It cannot sign in, whatever `status` says, and only the site lifts it. Always `false` elsewhere. */
+            siteBlocked: boolean;
             /** @description The user's set-password link that is not used and not expired: `invitation` for an invited user, `reset` after a reset, `setup` for the first admin. `null` when there is none (also when it expired). */
             pendingLink: components["schemas"]["PendingLink"] | null;
             createdAt: components["schemas"]["Timestamp"];
@@ -2573,6 +2576,15 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             /** @description The account is blocked (`forbidden`). No session is created. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Hosted edition: the email belongs to an account of another surveyjs.io id (`email-taken`, "Email in use"). No session is created. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -74,6 +74,7 @@ const adminUserJson = (
   instanceRole: account.instanceRole,
   status: account.status,
   hasPassword: account.passwordHash !== null,
+  siteBlocked: account.siteBlocked,
   pendingLink: pendingLink
     ? { purpose: pendingLink.purpose, expiresAt: pendingLink.expiresAt }
     : null,

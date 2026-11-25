@@ -28,6 +28,7 @@ const users: AdminUser[] = [
     instanceRole: "admin",
     status: "active",
     hasPassword: true,
+    siteBlocked: false,
     pendingLink: null,
     createdAt: "2026-10-01T09:00:00.000Z",
     lastSignInAt: "2026-10-29T08:00:00.000Z",
@@ -39,6 +40,7 @@ const users: AdminUser[] = [
     instanceRole: "user",
     status: "invited",
     hasPassword: false,
+    siteBlocked: false,
     pendingLink: { purpose: "invitation", expiresAt: "2026-11-04T09:00:00.000Z" },
     createdAt: "2026-10-28T09:00:00.000Z",
     lastSignInAt: null,
@@ -50,6 +52,7 @@ const users: AdminUser[] = [
     instanceRole: "user",
     status: "active",
     hasPassword: false,
+    siteBlocked: false,
     pendingLink: { purpose: "reset", expiresAt: "2026-11-05T09:00:00.000Z" },
     createdAt: "2026-10-20T09:00:00.000Z",
     lastSignInAt: "2026-10-27T08:00:00.000Z",
@@ -61,9 +64,34 @@ const users: AdminUser[] = [
     instanceRole: "user",
     status: "invited",
     hasPassword: false,
+    siteBlocked: false,
     pendingLink: null,
     createdAt: "2026-10-01T09:00:00.000Z",
     lastSignInAt: null,
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000006",
+    email: "blake@example.test",
+    displayName: "Blake",
+    instanceRole: "user",
+    status: "active",
+    hasPassword: false,
+    siteBlocked: true,
+    pendingLink: null,
+    createdAt: "2026-10-01T09:00:00.000Z",
+    lastSignInAt: "2026-10-26T08:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000007",
+    email: "dora@example.test",
+    displayName: "Dora",
+    instanceRole: "user",
+    status: "disabled",
+    hasPassword: false,
+    siteBlocked: true,
+    pendingLink: null,
+    createdAt: "2026-10-01T09:00:00.000Z",
+    lastSignInAt: "2026-10-26T08:00:00.000Z",
   },
 ];
 
@@ -196,6 +224,11 @@ describe("the Users page", () => {
     expect(within(rex).getByText("Reset pending")).toBeTruthy();
     const ivo = screen.getByRole("row", { name: /Ivo/ });
     expect(within(ivo).getByText("Invited, link expired")).toBeTruthy();
+    // The site's block (hosted sign-in) is shown beside the status, which an admin may also set.
+    const blake = screen.getByRole("row", { name: /Blake/ });
+    expect(within(blake).getByText("Active, blocked on surveyjs.io")).toBeTruthy();
+    const dora = screen.getByRole("row", { name: /Dora/ });
+    expect(within(dora).getByText("Disabled, blocked on surveyjs.io")).toBeTruthy();
   });
 
   it("shows a user's sign-ins, and unlinks one after a confirmation", async () => {

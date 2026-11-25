@@ -113,8 +113,9 @@ the account menu, then open <http://localhost:5173> again.
 Sign out. Sign in as Blake (`sub` `aaaaaaaa-0000-4000-8000-000000000002`, `blake@example.com`) with **blocked** ticked.
 
 - **Check:** the page "You can't sign in yet" says "This surveyjs.io account is blocked. Contact SurveyJS support if you
-  think this is a mistake." A blocked first sign-in creates no account, so Blake is not on the Users page (section 6).
-  Signing in again with the box cleared works.
+  think this is a mistake." A blocked first sign-in creates no account.
+- Sign in as Blake again with the box cleared: it works and creates Blake's account, which the Users page lists in
+  section 6.
 
 ## 4. An email another surveyjs.io id holds (checklist 4)
 
