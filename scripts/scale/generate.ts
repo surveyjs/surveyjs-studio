@@ -191,9 +191,14 @@ export async function generate(
   return { largestSurveyId: surveyIds[0]!, ownerId: userIds[0]! };
 }
 
-/** Why the database cannot take synthetic data, or null when it holds no app data. */
+/**
+ * Why the database cannot take synthetic data, or null when it holds no app data. A table that
+ * does not exist yet (a database never migrated) holds none, so this can run before `migrate`.
+ */
 export async function refusal(database: SqlDatabase): Promise<string | null> {
+  const existing = new Set((await database.db.introspection.getTables()).map((t) => t.name));
   for (const table of ["users", "surveys", "api_tokens"] as const) {
+    if (!existing.has(table)) continue;
     const row = await database.db
       .selectFrom(table)
       .select((eb) => eb.fn.countAll().as("n"))
@@ -224,9 +229,10 @@ export async function run(
   }
   const database = openDatabase(target);
   try {
-    await migrate(database);
+    // Emptiness first: a database that holds data is refused before anything migrates it.
     const problem = await refusal(database);
     if (problem !== null) return { code: 2, err: `Error: ${problem}\n` };
+    await migrate(database);
     const started = Date.now();
     const { largestSurveyId, ownerId } = await generate(database, parsed.sizes, log);
     // The owner's API token, so that scale:check can sign in. The data is synthetic.

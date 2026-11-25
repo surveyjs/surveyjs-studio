@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase, type SqlDatabase } from "../../server/src/sql/database.js";
-import { migrate } from "../../server/src/sql/migrator.js";
+import { migrate, migrationStatus } from "../../server/src/sql/migrator.js";
 import { scratchSqlite, type ScratchDatabase } from "../../server/src/sql/scratch-databases.js";
 import { generate, run, SURVEY_BATCH } from "./generate.js";
 import { parseSizes, type ScaleSizes } from "./sizes.js";
@@ -168,6 +168,24 @@ describe("run", () => {
     expect(result.err).toMatch(/^Error: .*users/);
     expect(await count(database, "surveys")).toBe(0);
     expect(await count(database, "users")).toBe(1);
+  });
+
+  it("refuses a database with data before migrating it, leaving its schema as it was", async () => {
+    const database = await fresh();
+    await generate(database, { ...sizes, users: 1, surveys: 1, responses: 0, largest: 0 });
+    // An older database: the newest migration is not recorded as applied.
+    const { applied } = await migrationStatus(database);
+    await database.db
+      .deleteFrom("schema_migrations")
+      .where("version", "=", applied.at(-1)!.version)
+      .execute();
+    const target = opened.at(-1)!.scratch.target;
+    if (target.dialect !== "sqlite") throw new Error("sqlite expected");
+    expect((await migrationStatus(database)).pending).toHaveLength(1);
+    const result = await run(args, { SQLITE_PATH: target.path });
+    expect(result.code).toBe(2);
+    expect(result.err).toMatch(/^Error: .*already holds data/);
+    expect((await migrationStatus(database)).pending).toHaveLength(1);
   });
 
   it("fills an empty database and prints its token line", async () => {
