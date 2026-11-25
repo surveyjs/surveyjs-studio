@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hashCredential, lastFour } from "../credentials/format.js";
 import { createLocalByteStore } from "../bytes/local.js";
 import type { ByteStore } from "../bytes/types.js";
 import type { SqlDialectName } from "../sql/database.js";
@@ -74,8 +75,19 @@ export async function scratchCredentials(dialect: SqlDialectName): Promise<Crede
   const projects = createSqlProjectStore(database, usersById);
   return {
     store: createSqlCredentialStore(database),
-    seedsLegacyKeys: false,
-    seedLegacyKey: () => Promise.reject(new Error("The SQL store has no legacy keys")),
+    seedsLegacyKeys: true,
+    async seedLegacyKey(userId, value) {
+      await database.db
+        .insertInto("legacy_access_keys")
+        .values({
+          key_hash: hashCredential(value, "legacy-key"),
+          user_id: userId.toLowerCase(),
+          last_four: lastFour(value.toLowerCase()),
+          created_at: "2026-11-01T10:00:00.000Z",
+          revoked_at: null,
+        })
+        .execute();
+    },
     async newProjectId() {
       const id = randomUUID();
       await projects.createProject({

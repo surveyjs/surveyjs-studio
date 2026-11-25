@@ -844,6 +844,13 @@ export interface CredentialStore {
   ): Promise<{ readonly lastFour: string; readonly revoked: boolean } | null>;
   /** False when the user has no key. */
   revokeLegacyKey(userId: string, at: string): Promise<boolean>;
+  /**
+   * Replaces the user's unrevoked legacy key: revokes it at `at` and stores the new hash and last four
+   * as the user's key, created at `at`. False when the user has no key or it is revoked, also when a
+   * concurrent replace or revoke got there first. Optional: the azure-legacy provider does not
+   * implement it.
+   */
+  replaceLegacyKey?(userId: string, hash: string, lastFour: string, at: string): Promise<boolean>;
 }
 
 export interface ProviderSet {

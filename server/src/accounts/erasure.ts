@@ -104,6 +104,7 @@ export function createEraseAccount(stores: ErasureStores, logger?: ErasureLogger
   return async (userId, { now }) => {
     const id = checkedUserId(userId);
     await stores.credentials.revokeApiTokensOfCreator(id, now);
+    await stores.credentials.revokeLegacyKey(id, now);
     let surveysDeleted = 0;
     let projectsLeft = 0;
     let projectsDeleted = 0;

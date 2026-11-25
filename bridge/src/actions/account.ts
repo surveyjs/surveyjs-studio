@@ -10,8 +10,9 @@ import { unexpectedStatus } from "../studio.js";
 
 /**
  * `generateAccessKey`: an API token is rotated and its new value answered as a JSON string. A
- * legacy access key lives in the old service until the keys move into Studio (ADR 0037 point 5):
- * Studio refuses to replace it, and the request goes to the old service unchanged.
+ * legacy access key is replaced by Studio once the keys have moved into it (ADR 0037 point 5) and
+ * answered the same way. Where Studio cannot replace it (a 409), the request goes to the old
+ * service unchanged.
  */
 export async function generateAccessKey(
   request: FastifyRequest,

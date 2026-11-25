@@ -223,8 +223,9 @@ export interface paths {
         /**
          * Replace the credential of this request
          * @description Bearer only. The API token that signs the request is rotated: the old value stops working and a
-         *     new one, with the same name and scope, comes back (shown once). A legacy access key cannot be
-         *     replaced here (`409 legacy-key-replace-unavailable`).
+         *     new one, with the same name and scope, comes back (shown once). A legacy access key is replaced
+         *     by a new 32-digit hexadecimal key, and the old key is revoked. `409 legacy-key-replace-unavailable`
+         *     where the server cannot replace a legacy key.
          */
         post: operations["replaceCurrentCredential"];
         delete?: never;

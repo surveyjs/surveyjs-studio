@@ -186,12 +186,27 @@ export function createCredentialsService(options: CredentialsServiceOptions): Cr
     async replaceCurrent(user) {
       const credential = user.credential;
       if (credential?.kind === "legacy-key") {
-        throw new AppError({
-          code: "legacy-key-replace-unavailable",
-          status: 409,
-          title: "Legacy key replace unavailable",
-          detail: "A legacy access key cannot be replaced here.",
-        });
+        if (credentials.replaceLegacyKey === undefined) {
+          throw new AppError({
+            code: "legacy-key-replace-unavailable",
+            status: 409,
+            title: "Legacy key replace unavailable",
+            detail: "A legacy access key cannot be replaced here.",
+          });
+        }
+        // 32 lower-case hex digits, the shape the old service issued.
+        const value = randomUUID().replaceAll("-", "");
+        // Revoked or replaced since the request was authenticated: the key no longer signs in.
+        if (
+          !(await credentials.replaceLegacyKey(
+            user.id,
+            hashCredential(value, "legacy-key"),
+            lastFour(value),
+            isoNow(),
+          ))
+        )
+          throw unauthenticated();
+        return { value };
       }
       // Bearer only (the contract's security): a session never gets here.
       if (credential?.kind !== "api-token") throw unauthenticated();

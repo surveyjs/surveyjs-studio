@@ -69,6 +69,26 @@ describe("eraseAccount", () => {
     expect(await providers.credentials.findApiToken("hash-2")).toMatchObject({ revokedAt: null });
   });
 
+  it("revokes the user's legacy key, and no one else's", async () => {
+    const other = "eeeeeeee-0000-4000-8000-0000000000d8";
+    const providers = createMemoryProviders({
+      users: [USER],
+      surveys: [],
+      projects: [],
+      memberships: [],
+      legacyAccessKeys: { [USER.id]: "aaaa1111", [other]: "bbbb2222" },
+    });
+    await createEraseAccount(providers)(USER.id, { now: NOW });
+    expect(await providers.credentials.findLegacyKey("aaaa1111")).toEqual({
+      userId: USER.id,
+      revoked: true,
+    });
+    expect(await providers.credentials.findLegacyKey("bbbb2222")).toEqual({
+      userId: other,
+      revoked: false,
+    });
+  });
+
   it("logs one line with the summary's ids and counts only", async () => {
     const lines: { details: Readonly<Record<string, string | number>>; message: string }[] = [];
     const logger: ErasureLogger = { info: (details, message) => lines.push({ details, message }) };
