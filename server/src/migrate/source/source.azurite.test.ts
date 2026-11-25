@@ -202,6 +202,14 @@ describe("the legacy source readers (local replica)", () => {
     expect(await collect(source.responses(MISSING))).toEqual([]);
   });
 
+  it("lists the results account's tables once, lower-case", async () => {
+    const tables = await source.resultTables();
+    for (const table of Object.keys(fixtures.resultsByTable)) {
+      expect(tables.has(table.toLowerCase()), table).toBe(true);
+    }
+    expect(tables.has(`post${MISSING.replaceAll("-", "")}`)).toBe(false);
+  });
+
   it("streams the large survey's responses in pages", async () => {
     let count = 0;
     const seen = new Set<string>();

@@ -1,4 +1,4 @@
-import { odata, TableClient, type TableEntityResult } from "@azure/data-tables";
+import { odata, TableClient, TableServiceClient, type TableEntityResult } from "@azure/data-tables";
 import { isLocalStorageString } from "../../legacy/endpoint-guard.js";
 import { LegacyStoreError, statusOf } from "../../providers/azure-legacy/errors.js";
 import type { LegacyResultEntity } from "../../providers/azure-legacy/rows.js";
@@ -28,6 +28,11 @@ export interface TableSource {
    * and key revocations Studio wrote). The copy does not take them; `verify` flags any.
    */
   ownTokenRows(): AsyncIterable<{ partition: string }>;
+  /**
+   * The names of the results account's tables, lower-case (one listing): a survey without a
+   * `post…` or `postdelete…` table has no responses or deletion copies to query.
+   */
+  resultTables(): Promise<Set<string>>;
   /** The results account's clock (its responses' change times are stamped by it); null: none. */
   tablesClock(): Promise<Date | null>;
 }
@@ -37,6 +42,9 @@ const PAGE_SIZE = 500;
 const CLOCK_TABLE = "post00000000000000000000000000000000";
 const EPOCH = new Date(0);
 const dashless = (id: string) => id.replaceAll("-", "").toLowerCase();
+/** A survey's response and deletion-copy tables, lower-case, as `resultTables` lists them. */
+export const responseTableOf = (postId: string): string => `post${dashless(postId)}`;
+export const deletedTableOf = (postId: string): string => `postdelete${dashless(postId)}`;
 
 type Entity = TableEntityResult<Record<string, unknown>>;
 type Headers = { get(name: string): string | undefined } | undefined;
@@ -122,8 +130,23 @@ export function openTableSource(config: {
   };
 
   return {
+    async resultTables() {
+      const names = new Set<string>();
+      try {
+        const service = TableServiceClient.fromConnectionString(
+          config.resultsStorageConnectionString,
+          { allowInsecureConnection: isLocalStorageString(config.resultsStorageConnectionString) },
+        );
+        for await (const table of service.listTables()) {
+          if (table.name) names.add(table.name.toLowerCase());
+        }
+      } catch (error) {
+        throw new LegacyStoreError("table list", error);
+      }
+      return names;
+    },
     async *responses(postId, since) {
-      const table = results(`post${dashless(postId)}`);
+      const table = results(responseTableOf(postId));
       for await (const row of entitiesOf("response read", table, since)) {
         yield {
           ...resultEntity(row, stringOf(row.id) ?? row.rowKey ?? ""),
@@ -142,7 +165,7 @@ export function openTableSource(config: {
       }
     },
     async *deletedCopies(postId, since) {
-      const table = results(`postdelete${dashless(postId)}`);
+      const table = results(deletedTableOf(postId));
       for await (const row of entitiesOf("deleted response read", table, since)) {
         // The copy's `instanceid` is the deleted row's key; its time is the deletion time.
         const responseId = stringOf(row.instanceid) ?? "";

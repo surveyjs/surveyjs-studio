@@ -481,6 +481,43 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect(await target.privateQuestionsOf(guid(999))).toEqual([]);
     });
 
+    it("replaces only a survey's private questions, and removes them for none", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      await target.setPrivateQuestions(S2, ["b", "a"]);
+      expect(await target.privateQuestionsOf(S2)).toEqual(["b", "a"]);
+      expect((await providers.surveys.getSurvey(S2))?.name).toBe(data.surveys[1]!.record.name);
+      await target.setPrivateQuestions(S1.toUpperCase(), []);
+      expect(await target.privateQuestionsOf(S1)).toEqual([]);
+    });
+
+    it("removes the responses a stream of ids lacks, and counts the ids it does not hold", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const ids = data.responses.map((rec) => rec.response.id);
+      const [gone, ...kept] = ids;
+      async function* stream() {
+        // Upper-case and repeated ids are the same rows; two ids the target lacks.
+        for (const id of kept) yield id.toUpperCase();
+        yield kept[0]!;
+        yield guid(798);
+        yield guid(799);
+      }
+      expect(await target.removeResponsesNotIn(S1, stream())).toEqual({ removed: 1, missing: 2 });
+      expect(await target.keysOf("survey_responses", S1)).toEqual([...kept].sort());
+      expect(await target.keysOf("survey_responses", S1)).not.toContain(gone);
+      // Nothing to remove the second time; an empty stream removes every row of the survey.
+      expect(await target.removeResponsesNotIn(S1, stream())).toEqual({ removed: 0, missing: 2 });
+      async function* none() {}
+      expect(await target.removeResponsesNotIn(S1, none())).toEqual({
+        removed: kept.length,
+        missing: 0,
+      });
+      expect(await target.countRows("survey_responses", S1)).toBe(0);
+    });
+
     it("lists the ids of the surveys, projects and users, ascending", async () => {
       await wipe();
       const data = fixtures();
@@ -679,6 +716,32 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
         { provider: "surveyjs", subject: ALICE, email: "alice@example.com", emailVerified: true },
       ]);
       expect(await target.identitiesOf(guid(3))).toEqual([]);
+    });
+
+    it("tells why a person would not be written: an email or an identity held elsewhere", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const [alice] = data.people;
+      expect(await target.heldElsewhere(alice!)).toBeNull();
+      expect(await target.heldElsewhere({ id: guid(3), email: "x@example.com" })).toBeNull();
+      expect(await target.heldElsewhere({ id: guid(3), email: "ALICE@example.com" })).toBe(
+        "email-taken",
+      );
+      await database.db
+        .insertInto("user_identities")
+        .values({
+          provider: "surveyjs",
+          subject: guid(4),
+          user_id: BOB,
+          email: "other@example.com",
+          email_verified: true,
+          created_at: at(0),
+        })
+        .execute();
+      expect(await target.heldElsewhere({ id: guid(4), email: "free@example.com" })).toBe(
+        "identity-linked-elsewhere",
+      );
     });
 
     it("prunes the history to the newest by (at, id)", async () => {

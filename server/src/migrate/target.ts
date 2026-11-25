@@ -5,6 +5,7 @@
  * what `delta` relies on. The records are already normalised; an id that is not a GUID fails here
  * rather than going into a row.
  */
+import { randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
 import { GUID } from "../domain/guid.js";
@@ -34,6 +35,8 @@ export interface MigrationTarget {
   upsertSurvey(rec: SurveyRec): Promise<void>;
   /** The survey's stored private questions; [] for none (or no such survey). */
   privateQuestionsOf(surveyId: string): Promise<string[]>;
+  /** Replaces the survey's private questions only (none: the row goes); the survey must exist. */
+  setPrivateQuestions(surveyId: string, names: readonly string[]): Promise<void>;
   /** Every id of the table, ascending (`verify` looks for rows the source no longer has). */
   idsOf(table: "surveys" | "projects" | "users"): Promise<string[]>;
   /**
@@ -66,6 +69,14 @@ export interface MigrationTarget {
   projectMembers(): Promise<{ projectId: string; userId: string; role: string }[]>;
   /** `verify`: the partial flag of each of the survey's responses among `ids` that it holds. */
   responseStates(surveyId: string, ids: readonly string[]): Promise<Map<string, boolean>>;
+  /**
+   * `verify`: why `upsertPeople` would not write this person: another account holds the email,
+   * or the person's `surveyjs` identity is linked to another account; null when neither.
+   */
+  heldElsewhere(person: {
+    id: string;
+    email: string;
+  }): Promise<"email-taken" | "identity-linked-elsewhere" | null>;
   /** `verify`: the person's sign-in identities. */
   identitiesOf(
     userId: string,
@@ -95,6 +106,15 @@ export interface MigrationTarget {
    */
   deleteSurvey(surveyId: string): Promise<boolean>;
   deleteResponses(surveyId: string, ids: readonly string[]): Promise<number>;
+  /**
+   * `reconcile`: removes the survey's responses whose ids are not among `ids` (the source's,
+   * streamed: held in a temporary table of the target, never in memory), and counts the ids the
+   * target lacks. `removed`: rows deleted; `missing`: ids of the stream the survey does not hold.
+   */
+  removeResponsesNotIn(
+    surveyId: string,
+    ids: AsyncIterable<string>,
+  ): Promise<{ removed: number; missing: number }>;
   deleteProject(id: string): Promise<boolean>;
   deletePeople(ids: readonly string[]): Promise<number>;
   /** Saved views by key (`{surveyId}/{userId}/{view}`); how many went. */
@@ -134,6 +154,8 @@ const ZERO_SURVEY = "00000000-0000-0000-0000-000000000000";
 
 /** Rows per statement: under SQLite's and PostgreSQL's parameter limits. */
 const BATCH = 200;
+/** Ids per statement into `removeResponsesNotIn`'s temporary table (one parameter each). */
+const ID_BATCH = 500;
 
 /** The id of a row: a GUID, or an error naming the field (never the value's neighbours). */
 function guid(value: string, what: string): string {
@@ -205,6 +227,20 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         .where("survey_id", "=", guid(surveyId, "A survey id"))
         .executeTakeFirst();
       return row ? jsonOf<string[]>(row.names) : [];
+    },
+
+    async setPrivateQuestions(surveyId, names) {
+      const id = guid(surveyId, "A survey id");
+      if (names.length === 0) {
+        await db.deleteFrom("private_questions").where("survey_id", "=", id).execute();
+        return;
+      }
+      const text = json(names);
+      await db
+        .insertInto("private_questions")
+        .values({ survey_id: id, names: text })
+        .onConflict((oc) => oc.column("survey_id").doUpdateSet({ names: text }))
+        .execute();
     },
 
     async idsOf(table) {
@@ -306,6 +342,25 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         for (const row of rows) states.set(row.id, flagOf(row.partial));
       }
       return states;
+    },
+
+    async heldElsewhere({ id, email }) {
+      const userId = guid(id, "A user id");
+      const identity = await db
+        .selectFrom("user_identities")
+        .select("user_id")
+        .where("provider", "=", "surveyjs")
+        .where("subject", "=", userId)
+        .executeTakeFirst();
+      if (identity !== undefined && identity.user_id !== userId) {
+        return "identity-linked-elsewhere";
+      }
+      const holder = await db
+        .selectFrom("users")
+        .select("id")
+        .where("email", "=", email.toLowerCase())
+        .executeTakeFirst();
+      return holder !== undefined && holder.id !== userId ? "email-taken" : null;
     },
 
     async identitiesOf(userId) {
@@ -789,6 +844,47 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         deleted += Number(result.numDeletedRows);
       }
       return deleted;
+    },
+
+    async removeResponsesNotIn(surveyId, ids) {
+      const survey = guid(surveyId, "A survey id");
+      // One connection throughout: a temporary table is the connection's own.
+      return db.connection().execute(async (conn) => {
+        const table = `migrate_ids_${randomUUID().replaceAll("-", "")}`;
+        const ref = sql.table(table);
+        const type = sql.raw(dialect === "postgres" ? "uuid" : "text");
+        await sql`create temporary table ${ref} (id ${type} primary key)`.execute(conn);
+        try {
+          let batch: string[] = [];
+          const flush = async () => {
+            if (batch.length === 0) return;
+            const values = sql.join(batch.map((one) => sql`(${one})`));
+            batch = [];
+            await sql`insert into ${ref} (id) values ${values} on conflict do nothing`.execute(
+              conn,
+            );
+          };
+          for await (const one of ids) {
+            batch.push(guid(one, "A response id"));
+            if (batch.length >= ID_BATCH) await flush();
+          }
+          await flush();
+          const missing = await sql<{ n: number | string }>`
+            select count(*) as n from ${ref} t where not exists (
+              select 1 from survey_responses r where r.survey_id = ${survey} and r.id = t.id)`.execute(
+            conn,
+          );
+          const removed = await sql`
+            delete from survey_responses where survey_id = ${survey} and not exists (
+              select 1 from ${ref} t where t.id = survey_responses.id)`.execute(conn);
+          return {
+            removed: Number(removed.numAffectedRows ?? 0),
+            missing: Number(missing.rows[0]?.n ?? 0),
+          };
+        } finally {
+          await sql`drop table ${ref}`.execute(conn);
+        }
+      });
     },
 
     async deleteProject(id) {
