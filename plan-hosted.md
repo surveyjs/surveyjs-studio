@@ -64,13 +64,13 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 
 | Step | Name                                                           | Status |
 | ---- | -------------------------------------------------------------- | ------ |
-| 1    | Decisions and evidence: target stores, legacy traffic, mapping | ☐      |
-| 2    | Users from sign-in: the local directory and licence notices    | ☐      |
-| 3    | API tokens, legacy access keys and CORS                        | ☐      |
-| 4    | Partial responses                                              | ☐      |
-| 5    | The bridge: public actions and legacy files                    | ☐      |
-| 6    | The bridge: access-key actions and the migration guide         | ☐      |
-| 7    | Taking over `api.surveyjs.io` traffic                          | ☐      |
+| 1    | Decisions and evidence: target stores, legacy traffic, mapping | ☑      |
+| 2    | Users from sign-in: the local directory and licence notices    | ☑      |
+| 3    | API tokens, legacy access keys and CORS                        | ☑      |
+| 4    | Partial responses                                              | ☑      |
+| 5    | The bridge: public actions and legacy files                    | ☑      |
+| 6    | The bridge: access-key actions and the migration guide         | ☑      |
+| 7    | Taking over `api.surveyjs.io` traffic                          | ☑      |
 | 8    | Target provider readiness                                      | ☐      |
 | 9    | The migration tool                                             | ☐      |
 | 10   | The cutover kit                                                | ☐      |
