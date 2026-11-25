@@ -568,10 +568,13 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
   - every run reads the source only;
   - a dry run into a scratch target is the default unless `--target` is given;
   - progress logs, and a machine-readable report; reports from production or a staging copy stay private (rule 6).
-- **Files:** editor images and respondent files go into the target file store, with `legacy_files` filled for the legacy names. Blobs in `my-surveys-files` (Step 7 of Phase 1) are copied by ID.
+- **Files:** only the files that a copied definition, theme, history entry or response links go into the target file store (the exporter scans for the references), with `legacy_files` filled for the legacy names: a deterministic id from kind, name and size, and the all-zero survey, so outside every quota. `delta` copies files linked after the pre-copy; files nobody links stay behind. Blobs in `my-surveys-files` (Step 7 of Phase 1) are copied by ID, with their surveys.
 - **History:** the 20 newest entries of each survey, by time, then id ([ADR 0036](docs/adr/0036-history-snapshots-above-a-size-limit.md), changed 2026-11-25). A published snapshot is one of them only when its time places it among the 20 newest; nothing has served it since the old run page. The snapshots stay inline in `survey_history`.
 - **The hosted-only tables of Step 8** are filled here: `legacy_access_keys` with the site's keys hashed (lower-cased) and their last four characters, `survey_events` and `deleted_responses` from the legacy logs.
-- **Hidden public-results columns:** a survey's saved results layout that marks answer columns non-public or hidden is mapped into its `privateResultQuestions`, so `getSurveyPublicResults` through the bridge keeps leaving them out ([legacy-compat.md](docs/api/legacy-compat.md#which-responses-are-counted), Step 5).
+- **Hidden public-results columns:** a survey's `private_questions` is the union of the questions its permissions marked not public and the answer columns its saved column layout hid or marked not public. When the layout lists at least one column, an answer it does not list takes the layout's "new columns" visibility, and the response time and id columns are private when the layout hides or omits them. An empty layout is no layout. An unreadable setting turns public results off for that survey, reported. The layout itself is kept in `survey_layouts` ([ADR 0044](docs/adr/0044-the-hosted-migration-tool.md), [legacy-compat.md](docs/api/legacy-compat.md#which-responses-are-counted)).
+- **People:** a `users` row and a linked `surveyjs` sign-in for every person the copied data names (`site_blocked` from the site's block flag, no password, no licence date); a person with no email, or an email equal to another's after lower-casing, gets none and is reported. Legacy access keys are copied hashed. A survey whose project is gone or has no members moves to its creator's personal surveys, reported.
+- **Where it runs and how it is used:** inside the hosted image (`surveyjs-studio migrate-hosted <command>`) or from a checkout (`pnpm migrate:hosted`). `verify`, `delta`, `reconcile` and `wipe` need `--target`. The run order (pre-copy, daily `delta`, a full `verify` the day before, the window's `delta`, `reconcile` and incremental `verify`) and what a failed `verify` means are in [Operations › Hosted migration](docs/operations/hosted-migration.md). Open inputs from the SurveyJS team: the old servers' time zone, whether the old app writes its change-time columns in UTC, the real column list of the old SQL tables, and read-only credentials.
+- **Not copied, by decision:** Studio's own legacy-key revocations, API tokens and uploads that belong to no survey (production has none; `verify` flags any), and files nobody links.
 
 **Tests**
 
@@ -588,7 +591,7 @@ The checks on real traffic, the switch, and `LEGACY_KEY_REVOKE` a day after it a
   - a `--sample` copy holds whole accounts only (no survey whose owner or project is missing), and `verify --sample` is green on it;
   - `wipe` refuses without the confirmation and leaves an empty target with it.
 
-**Documentation:** `docs/operations/hosted-migration.md` (commands, report fields, what a failed `verify` means), `hosted-migration-mapping.md` (final), `docs/demo/hosted-09.md`.
+**Documentation:** [ADR 0044](docs/adr/0044-the-hosted-migration-tool.md), [`docs/operations/hosted-migration.md`](docs/operations/hosted-migration.md) (commands, report fields, what a failed `verify` means), `hosted-migration-mapping.md` (final, private), [`docs/demo/hosted-09.md`](docs/demo/hosted-09.md).
 
 **Demo checklist**
 

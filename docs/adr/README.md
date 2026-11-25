@@ -50,3 +50,4 @@ and add each one to this index.
 | [0041](0041-taking-over-the-legacy-api-host.md)            | Taking over the old API's host and metrics (its 1, 2, 7 changed by 0042)        | Accepted           |
 | [0042](0042-one-switch-to-the-new-server.md)               | One switch to the new server, after a test migration                            | Accepted           |
 | [0043](0043-hosted-users-on-the-local-directory.md)        | Hosted users on the local directory, from surveyjs.io sign-in                   | Accepted           |
+| [0044](0044-the-hosted-migration-tool.md)                  | The hosted migration tool                                                       | Accepted           |

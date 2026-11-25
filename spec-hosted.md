@@ -106,7 +106,7 @@ Numbered H1–H30, to keep them apart from the Phase 1 stories (US 1–81) and t
 
 ### SurveyJS team: architecture
 
-- H27. As the site team, I want the app to need nothing from the site's user tables after the cutover, only sign-in, the account-deleted webhook and a licence endpoint, so that we can change the site's database freely.
+- H27. As the site team, I want the app to need nothing from the site's user tables after the cutover, only sign-in, the account-deleted webhook and licence claims at sign-in, so that we can change the site's database freely.
 - H28. As the site team, I want to remove all My Surveys code from surveyjs.io and `api.surveyjs.io` after the cutover, so that we maintain only one implementation.
 - H29. As a maintainer of this repository, I want the Azure legacy provider, the replica and the legacy-format rules removed after stabilisation, so that the code no longer carries the old formats.
 - H30. As a back-end porter, I want the compatibility layer to stay outside the contract, so that a port does not have to implement legacy endpoints.
@@ -133,11 +133,12 @@ Numbered H1–H30, to keep them apart from the Phase 1 stories (US 1–81) and t
   - `legacy_access_keys`: a hash of the key, the user ID and a revoked flag;
   - `survey_events`: the legacy event log `surveys`. It is shaped as a general audit table, which the P1 audit log can reuse later;
   - `deleted_responses`: the legacy `postdelete{postId}` copies. They are purged **30 days after the cutover**, and the app never makes new copies (decided 2026-10-19).
-- **IDs are kept.** That covers survey, Post, Result and response IDs, plus user IDs as references. Project and member IDs are kept too. Timestamps are kept exactly: `createdAt`, `updatedAt`, `submittedAt`, and history entry times.
+- **IDs are kept.** That covers survey, Post, Result and response IDs, plus user IDs as references. Project IDs are kept; the old member row id is dropped (a member is a project and a person, one row; **changed 2026-11-25 by [ADR 0044](docs/adr/0044-the-hosted-migration-tool.md)**). Timestamps are kept exactly: `createdAt`, `updatedAt`, `submittedAt`, and history entry times.
 - **The mapping document** (`docs/architecture/hosted-migration-mapping.md`, plan Step 1) maps every legacy entity in `legacy-data-layout.md` §3 to its target. It also names what is not migrated:
   - temporary files;
   - licence data, which stays on the site;
-  - `surveypublishedjson` snapshots, unless `publishid` is set on a survey, in which case they are migrated as history entries.
+  - `surveypublishedjson` snapshots: the survey's publish id goes to `surveys.legacy_publish_id`, and the snapshot is a history entry only when its time puts it among the 20 newest ([ADR 0044](docs/adr/0044-the-hosted-migration-tool.md));
+  - files that no copied record links, Studio's own key revocations, and API tokens and uploads that belong to no survey (production has none; `verify` flags any).
 - **Legacy data quirks** (null rows, boolean strings, BOM-prefixed JSON) are normalised on export. Each rule is listed in the mapping document.
 
 ### Users (H27)
@@ -146,10 +147,10 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 - **Until the cutover nothing changes:** `USER_DIRECTORY=surveyjs-sql` reads the site's `Users` table and licences.
 - **After it, users come from sign-in.** A new user directory keeps app-owned profiles, written from UserInfo at every sign-in (id, email, display name, `blocked`). They serve history author names and adding members by email.
-- **The migration seeds a profile** for every user the copied data names (survey owners, members, history authors), from the site's `Users` table.
+- **The migration seeds a profile** for every user the copied data names (survey owners, creators, members, history authors, view owners, key holders), from the site's `Users` table: a `users` row and a linked `surveyjs` sign-in, `site_blocked` from the block flag ([ADR 0044](docs/adr/0044-the-hosted-migration-tool.md)).
 - **Adding a member whose email has no profile** creates a pending invitation, which becomes a membership when someone signs in with that email. Admins can list and cancel invitations.
 - **Blocked users** get no session, from UserInfo's `blocked` claim. The sign-in server re-reads the account on every authorization (built in the site's sign-in server, 2026-10-28).
-- **Licence notices** come from a surveyjs.io site endpoint for the signed-in user, asked by the web app's shell, in the hosted edition only.
+- **Licence notices** come from a claim at sign-in, not from a site endpoint ([ADR 0043](docs/adr/0043-hosted-users-on-the-local-directory.md)); the migration sets no licence date.
 - **Deleted accounts:** the account-deleted webhook only. Reconciliation is not available with profiles, because "no profile" does not mean "deleted".
 - `ProjectStore` and the other stores move with the data. Profiles and invitations are app-owned tables in the target.
 
@@ -168,7 +169,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 - **Token storage:**
   - A token is shown once. Only a hash is stored, with a name, created and last-used time, and a scope.
   - New contract operations list, create and revoke tokens. Their exact paths and names are in Step 3 of the plan.
-- **Tokens before the cutover.** Tokens ship before the cutover, so integrators can start migrating early. On the Azure legacy provider they live in a new app-owned table that legacy code never reads. The migration copies them.
+- **Tokens before the cutover.** Tokens ship before the cutover, so integrators can start migrating early. On the Azure legacy provider they live in a new app-owned table that legacy code never reads. The migration does not copy them: production has none, and `verify` flags any it finds ([ADR 0044](docs/adr/0044-the-hosted-migration-tool.md)).
 - **CORS:**
   - `/public/*` answers any origin, without credentials;
   - bearer-authenticated requests answer any origin, without credentials;
@@ -242,7 +243,7 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
 
 ### Migration tool (H20–H23)
 
-- **Commands:** `pnpm migrate:hosted plan | copy | delta | reconcile | verify`. Each runs on a configured source (the Azure legacy provider and the file shares) and target (the chosen SQL provider and file store).
+- **Commands:** `pnpm migrate:hosted plan | copy | delta | reconcile | verify | wipe` ([ADR 0044](docs/adr/0044-the-hosted-migration-tool.md), [Operations](docs/operations/hosted-migration.md)). Each runs on a configured source (the Azure legacy provider and the file shares) and target (the chosen SQL provider and file store).
 - **Neutral record stream.** An exporter reads the legacy stores into a stream of typed NDJSON records plus file blobs. An importer writes them with **idempotent upserts keyed by ID**. The importer is a separate port, not the request-path interfaces, so IDs, timestamps and history are kept exactly. The same format can later serve provider-to-provider moves (idea §6.2 A5).
 - **Checkpoints** per entity and per survey, so a run can be resumed after a crash. A repeated run changes nothing.
 - **Pre-copy and delta:**
