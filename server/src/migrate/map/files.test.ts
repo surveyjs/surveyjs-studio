@@ -47,6 +47,23 @@ describe("fileLinks", () => {
     ).toEqual([]);
   });
 
+  it("finds a link through the old private/v1 route, in any letter case, the name anywhere in the query", () => {
+    const v1 = `https://api.surveyjs.io/private/v1/Surveys/files?name=${GUID}`;
+    const html = `<img src="https://surveyjs.io/PRIVATE/surveys/Files?x=1&amp;name=b.png">`;
+    expect(
+      fileLinks({
+        a: v1,
+        b: html,
+        c: `https://surveyjs.io/private/Surveys/files?filename=x&Name=c.png#top`,
+        d: `https://surveyjs.io/private/Surveys/files?filename=d.png`,
+      }),
+    ).toEqual([
+      { kind: "asset", name: GUID },
+      { kind: "asset", name: "b.png" },
+      { kind: "asset", name: "c.png" },
+    ]);
+  });
+
   it("reads a decoded name", () => {
     expect(fileLinks({ a: url("a%2Eb") })).toEqual([{ kind: "asset", name: "a.b" }]);
   });

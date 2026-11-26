@@ -2,10 +2,13 @@ import { isLegacyFileName } from "../../domain/legacy-file.js";
 import type { FileKind } from "../../domain/types.js";
 
 /**
- * An editor asset link: `{scheme}://{host}/private/Surveys/files?name={name}`, in a definition or
- * theme, alone or inside HTML. The name ends at a character that cannot be part of it.
+ * An editor asset link: `{scheme}://{host}/private/Surveys/files?name={name}` or the same action
+ * under `/private/v1/`, in a definition or theme, alone or inside HTML. As the old API routed it,
+ * the path and the parameter's name are in any letter case, and `name` may come anywhere in the
+ * query (after `&`, or `&amp;` inside HTML). The name ends at a character that cannot be part of it.
  */
-const ASSET_LINK = /https?:\/\/[^/\s"'<>]+\/private\/Surveys\/files\?name=([^&#\s"'<>)\\]+)/gi;
+const ASSET_LINK =
+  /https?:\/\/[^/\s"'<>]+\/private\/(?:v1\/)?Surveys\/files\?(?:[^#\s"'<>)\\]*?&(?:amp;)?)?name=([^&#\s"'<>)\\]+)/gi;
 /** A respondent file value: `dxsimage:{name}` or `dxsfile:{name}`, the whole string. */
 const RESPONSE_LINK = /^dxs(?:image|file):([^\s]+)$/;
 
