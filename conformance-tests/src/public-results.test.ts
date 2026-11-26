@@ -87,13 +87,8 @@ describe("getPublicResults", () => {
         },
         privateQuestions: feedbackPrivateQuestions,
       },
-      // The submission time is left out where the private questions name HappendAt.
-      items: [4, 5, 3, 1].map((satisfaction) => ({
-        ...(!feedbackPrivateQuestions.includes("HappendAt") && {
-          submittedAt: expect.any(String) as string,
-        }),
-        data: { satisfaction },
-      })),
+      // The private questions name HappendAt, so the submission time is left out.
+      items: [4, 5, 3, 1].map((satisfaction) => ({ data: { satisfaction } })),
       nextCursor: null,
     });
   });

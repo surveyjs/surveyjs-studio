@@ -304,17 +304,18 @@ The **Details** tab (`/surveys/<survey id>/results?tab=details`) works in both d
 [Downloading, sharing and deleting results](user-guide/downloading-sharing-and-deleting-results.md). What
 differs by mode, and where to try each part:
 
-| Part                | Memory mode (`pnpm demo`)                                                                                  | Azurite mode (`pnpm demo:azurite`)                                                                                                                                                |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Statistics, exports | Read from memory                                                                                           | Read from the replica's `post{postId}` table, page by page (each page scans the rows from its cursor's time on, [Paging](api/paging.md#results-oldest-first-one-survey))          |
-| Private questions   | Held in the server's memory, seeded from the fixture blob (`receipt` of Customer feedback)                 | The blob `surveyresultpermissions/{surveyId}` of the replica, in the old format. `pnpm legacy:load` restores the fixture's list                                                   |
-| Delete Results      | Forgets the rows, markers and respondent files of the survey                                               | Deletes the rows of `post{postId}` and `SurveyCompletion{surveyId}` in batches of 100 (the tables stay), the respondent blobs, and writes one `SURVEY_DELETEALLRESULTS` audit row |
-| Save Respondent IP  | The response holds the loopback address (`127.0.0.1` or `::1`): the browser and the server share a machine | The same                                                                                                                                                                          |
+| Part                | Memory mode (`pnpm demo`)                                                                                                                                 | Azurite mode (`pnpm demo:azurite`)                                                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Statistics, exports | Read from memory                                                                                                                                          | Read from the replica's `post{postId}` table, page by page (each page scans the rows from its cursor's time on, [Paging](api/paging.md#results-oldest-first-one-survey))                  |
+| Private questions   | Held in the server's memory, seeded from the fixture blobs by the old public results' rule (`receipt`, `HappendAt` and `InstanceId` of Customer feedback) | The blob `surveyresultpermissions/{surveyId}` of the replica, in the old format, read with the old results column layout by the same rule. `pnpm legacy:load` restores the fixture's list |
+| Delete Results      | Forgets the rows, markers and respondent files of the survey                                                                                              | Deletes the rows of `post{postId}` and `SurveyCompletion{surveyId}` in batches of 100 (the tables stay), the respondent blobs, and writes one `SURVEY_DELETEALLRESULTS` audit row         |
+| Save Respondent IP  | The response holds the loopback address (`127.0.0.1` or `::1`): the browser and the server share a machine                                                | The same                                                                                                                                                                                  |
 
 - **Customer feedback** (`22222222-0000-4000-8000-a00000000001`, Olivia Owner's) has Grant Access **on**, and the
-  question `receipt` is private. Its public page is **`/results/22222222-0000-4000-8000-a00000000001`**
-  (<http://localhost:5173/results/22222222-0000-4000-8000-a00000000001>): it shows `satisfaction` and not
-  `receipt`, to anyone, without signing in.
+  question `receipt` is private; its saved column layout lists only the questions, so the submission time is private
+  too. Its public page is **`/results/22222222-0000-4000-8000-a00000000001`**
+  (<http://localhost:5173/results/22222222-0000-4000-8000-a00000000001>): it shows `satisfaction`, not `receipt`
+  or the submission time, to anyone, without signing in.
 - **API created** (`…a08`, Olivia Owner's, 1,500 responses) is for reading: its Details tab shows 1500 and the
   dates `2026-05-01T08:00:00.000Z` and `2026-05-01T20:30:00.000Z` in your browser's format, and its two
   downloads hold 1,500 responses. **Do not delete its results or change its settings**: the test suites read it.

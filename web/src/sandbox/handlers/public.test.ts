@@ -207,13 +207,11 @@ describe("getPublicResults", () => {
       id: SURVEYS.feedback,
       name: "Customer feedback",
       definition: seed.definitions[SURVEYS.feedback],
-      privateQuestions: ["receipt"],
+      privateQuestions: ["receipt", "HappendAt", "InstanceId"],
     });
     expect(page.items).toHaveLength(2);
-    expect(page.items[0]).toStrictEqual({
-      submittedAt: "2026-04-01T08:00:00.500Z",
-      data: seed.responses[SURVEYS.feedback]![0]!.data,
-    });
+    // The private questions name HappendAt (the old public results' rule on its layout): no time.
+    expect(page.items[0]).toStrictEqual({ data: seed.responses[SURVEYS.feedback]![0]!.data });
     const next = await (
       await call(`${path(SURVEYS.feedback)}?limit=3&cursor=${page.nextCursor}`)
     ).json();

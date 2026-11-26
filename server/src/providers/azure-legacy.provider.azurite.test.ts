@@ -18,20 +18,10 @@ import { describeProviderSuite } from "./suite/provider-suite.js";
 // Runs in the `providers-azurite` Vitest project: `pnpm test:providers:azurite`. Its global setup
 // loads the golden fixtures into the local replica first. Azurite has no file service: the legacy
 // file shares are a stub over the fixtures' share files.
-describeProviderSuite(
-  "azure-legacy (local replica)",
-  async () =>
-    createAzureLegacyProviders(replicaConfig(), {
-      legacyShares: createStubShareReader((await readLegacyFixtures()).files),
-    }),
-  {
-    except: {
-      // ADR 0016, changed 2026-11-26: the old public results' rule on the permissions and the
-      // column layout, as the migration's; asserted below.
-      "views > private questions > reads the fixture list and an empty one elsewhere":
-        "the old public results' rule on both the permissions and the column layout",
-    },
-  },
+describeProviderSuite("azure-legacy (local replica)", async () =>
+  createAzureLegacyProviders(replicaConfig(), {
+    legacyShares: createStubShareReader((await readLegacyFixtures()).files),
+  }),
 );
 
 describe("azure-legacy private questions of the fixtures (local replica)", () => {
