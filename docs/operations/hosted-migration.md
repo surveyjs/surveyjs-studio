@@ -96,9 +96,9 @@ with that project's surveys and members; and profiles of everyone the included d
 member's own personal surveys are not pulled in. Use the same `--sample` and `--include` on every command of a test
 migration: `copy` records them in the target, and `verify`, `delta` and `reconcile` refuse others (exit 2), so a
 `reconcile --sample` cannot empty a full target and a `delta` without `--sample` cannot grow a sample into a full copy.
-Once the target holds a copy, a later `copy` refuses another sample, or none on a sample target, for the same reason: it
-would rewrite the recorded sample and a `reconcile --sample` after it would delete everything outside the new one. To
-copy something else into a target, `wipe` it first.
+Once a copy has started in the target (one that stopped early too), a later `copy` refuses another sample, or none on a
+sample target, for the same reason: it would rewrite the recorded sample and a `reconcile --sample` after it would
+delete everything outside the new one. To copy something else into a target, `wipe` it first.
 `plan --sample` also writes the survey ids and key hashes of the sample, which the replay's filter needs.
 
 ## The run order

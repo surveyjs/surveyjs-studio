@@ -3,7 +3,8 @@
 Status: Accepted (hosted Step 9, 2026-11-25). Settles how the data of today's service reaches the new server, inside
 the order set by [ADR 0042](0042-one-switch-to-the-new-server.md). Changes [ADR 0037](0037-access-keys-and-api-tokens.md)
 point 4 (revocations), [ADR 0043](0043-hosted-users-on-the-local-directory.md) point 6 (who is seeded, what `reconcile` removes) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and
-the operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md).
+the operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md). Changed
+2026-11-26: copy fidelity (points 2, 3, 5, 7 and 8; see the end).
 
 ## Context
 
@@ -40,7 +41,8 @@ without `--target`: they act on what a copy already put there. `wipe` also needs
   names each survey's history authors from the history it copies. It records its sample (or none) and, at the end of a
   whole pass, that it finished: `delta` and `reconcile` refuse a target whose copy has not finished, and `verify`,
   `delta` and `reconcile` refuse a `--sample` or `--include` other than the copy's. A later `copy` refuses them too once
-  the target holds a copy (a survey checkpointed or a pass finished): only `wipe` lets a target take another sample.
+  the target holds any part of a copy: the sample is recorded before the copy's first write, so a run that stopped
+  early counts. Only `wipe` lets a target take another sample.
 - **`delta`** finds changes without listing the large stores: the SQL tables by their change time; a changed survey's
   history by its own prefix; responses, completion markers and deletion copies by change time, survey by survey, in
   parallel; the small containers listed and filtered by last-modified time. Then the marks move forward. Marks are
@@ -104,7 +106,8 @@ reported; the owner can turn them on again. The layout itself is kept, with the 
   `reconcile` removes only profiles the migration made and nobody has used since.
 - **Legacy access keys** are copied hashed (`hashCredential(key, "legacy-key")`) with their last four characters and
   `created_at` of the run. A blocked person's key is refused by `site_blocked`, not revoked.
-- **Members:** one row per project and person; an admin row wins; the old member id is dropped.
+- **Members:** one row per project and person; an admin row wins; the old member id is dropped. A member is created at
+  the earliest time of the person's rows and updated at their latest change time.
 
 ### 6. What "go" means
 
@@ -138,7 +141,11 @@ Both modes flag what the copy does not take (point 9).
 An account is in when a hash of its id falls below the share, or it is listed in `--include`, so every run picks the
 same set. The closure: the account's personal surveys; every project it is a member of, with the project's surveys and
 members; profiles of everyone the included data names. It is not transitive: a member's own personal surveys are not
-pulled in. `plan --sample` also writes the sample's survey ids and key hashes for the replay's filter (ADR 0042).
+pulled in. Members are the copy's own (point 5): only an admin or user role makes one, and a survey of a project the
+copy skips as member-less is in the sample when it moves to a sample account. The keys of everyone the sample names are
+copied with their profiles, people outside the sample included (a member of a sampled project, a survey's creator), as
+a full copy would hold them. `plan --sample` also writes the sample's survey ids and key hashes for the replay's filter
+(ADR 0042); those hashes are the sample accounts' keys only.
 
 ### 8. The decisions on data
 
@@ -149,8 +156,12 @@ pulled in. `plan --sample` also writes the sample's survey ids and key hashes fo
   client id and partial flag ([ADR 0038](0038-partial-responses.md)).
 - **A `\u0000` inside a JSON string** becomes U+FFFD on both dialects and is reported by id. A BOM is removed. Text that
   is not a JSON object is reported and skipped.
+- **Rows are read as the app reads them:** a response's id is the key the old service stored the row under (a row
+  whose own id field differs is reported), and a response, deletion copy or event without a stored time is skipped and
+  reported. A completion marker whose partial flag is not a Boolean is copied as complete and reported.
 - **Deleted responses** keep the answers, client id, partial flag and respondent address as one JSON object, with the
-  deletion time of the copy. Events keep their ids, types, times and payload text.
+  deletion time of the copy. Events keep their ids, types, times and payload text, without the respondent address older
+  rows carry; the ids in the payload are lower-cased.
 - **Local times** the old servers wrote without a zone (survey created, project and member times) are read as UTC until
   the SurveyJS team says otherwise.
 - **An id that is not a GUID** is skipped and reported, never a crash. Completion markers keep their client id as stored.
@@ -197,3 +208,23 @@ Actions log.
   run order in Operations makes the last `delta` come after the freeze.
 - Migration `0012` adds `migration_state`; nothing else in the schema changes.
 - Open: the four inputs of point 11.
+
+## Changed 2026-11-26: copy fidelity
+
+A correctness review of the tool found records the copy took differently from the old service or the app. Fixed, and
+recorded above:
+
+- **Point 2, another sample:** the guard looked at checkpoints, so a sample run stopped before its first checkpoint (its
+  profiles, keys, projects and some surveys already written) let another sample through. A copy now records its sample
+  before its first write of any kind, and the record decides; a full copy's record is "none", not missing.
+- **Point 3, files:** editor asset links through the old API's `/private/v1/Surveys/files` route are found too, as are
+  links in any letter case and with `name` anywhere in the query string.
+- **Point 5, members:** a member's update time is the latest change time of its rows, as the mapping says, not the
+  latest join or role-change time.
+- **Point 7, the sample:** it took any member row as membership, whatever its role, while the copy keeps only admin
+  and user rows; both now use the copy's rule. The copy keeps copying the keys of named people outside the sample, now
+  written down.
+- **Point 8, rows:** responses took their id from a field of the row rather than its key, and a row without a time got
+  the change time instead of being skipped; deletion copies and events did the same. Events kept the respondent
+  address of older rows and upper-case ids in their payload. Completion markers with a flag of another type were not
+  reported. Each is now as point 8 says, and the report counts the skipped and re-keyed rows.
