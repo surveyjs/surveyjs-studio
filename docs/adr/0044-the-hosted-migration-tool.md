@@ -245,7 +245,9 @@ fixed and recorded above in its point; the changes are kept here, by area.
 
 - **Point 8, history:** the published snapshot was never read, so it was never copied and `verify` agreed. It is now
   an entry at its own time (its last change), by nobody, kept only when that time puts it among the 20 newest; `delta`
-  takes one changed after the marks, and both `verify` history checks expect it.
+  takes one changed after the marks, and both `verify` history checks expect it. Known limit: a snapshot unpublished or
+  deleted, or a changed publish id, leaves a stale history entry that `verify` reports (`history`, `deep_history`);
+  neither the old service nor Studio writes publish ids any more.
 
 ### Source safety and the command line
 
@@ -254,7 +256,9 @@ fixed and recorded above in its point; the changes are kept here, by area.
   account's tables can be listed; a store that does not answer is named and the command refuses (exit 2) before
   anything is written. A share the credentials could not read used to read as "no file": the copy took none and
   `verify` agreed. The share reader's warnings are printed, no longer muted. The local replica has no file service: its
-  shares are not checked.
+  shares are not checked. A wrong results account that exists answered every survey's response table with "not found",
+  read as "no responses": the command now also refuses (exit 2) a results account that lists no response table while
+  the SQL source holds surveys, and a remote source whose two storage settings name the same account.
 - **A missing store is an error, not "empty".** A container or table that answers "not found" fails the run for every
   command, except the stores a source may lack because they are made on first use: a survey's response, deletion-copy
   and completion tables, the app's own token table, its file and view containers, and the published-snapshot
@@ -263,8 +267,10 @@ fixed and recorded above in its point; the changes are kept here, by area.
   hosted image they are the app's read-write ones). Every command but `wipe` prints the source it opened by names only
   (the SQL server and database, the two storage accounts). `copy` records those names in the target; `verify`, `delta`
   and `reconcile` refuse (exit 2) another source, and a later `copy` does too. A target copied before this change has
-  no record: its next run records its source with a printed note rather than refusing, so the earlier test targets
-  keep working; a mismatch is refused once one is stored.
+  no record: its next run records its source with a printed note rather than refusing; a mismatch is refused once one
+  is stored. That note does not make an older target current: any target the tool copied before 2026-11-26 must be
+  wiped and copied again. It holds private lists from the old rule, response ids taken from a field of the row, times
+  put in for rows without one, no published-snapshot entries, and event payloads with respondent addresses.
 - **`verify --no-pending`:** a pending item fails the run (exit 1). The window's `verify` uses it: after the freeze
   nothing may be pending, so "green with pending" no longer passes as "go". The summary line gives the pending count.
   The marks are taken a margin (5 minutes) back of the source's clocks, so the final `delta` must start at least that
@@ -297,7 +303,8 @@ fixed and recorded above in its point; the changes are kept here, by area.
   target kept would stay valid after the cutover.
 - **A response posted again after its deletion.** `reconcile` deleted every id a deletion copy named. An
   `Idempotency-Key` gives a response the same id again, so it now reads each such id in the source first: one the
-  source holds again stays, and is copied again (through the privacy guard) if the target lacks it.
+  source holds again stays, and is copied again (through the privacy guard) if the target lacks it. The incremental
+  `verify` agrees: such an id the target holds is not a deletion it kept.
 - **A survey `reconcile` removes** loses its checkpoint too, so if it comes back a later `copy` copies it rather than
   skipping it as copied.
 - **Point 11, clocks (product owner, 2026-11-26):** the old stores set the change times themselves (the SQL database,

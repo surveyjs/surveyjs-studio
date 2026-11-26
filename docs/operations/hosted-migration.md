@@ -36,11 +36,11 @@ environment's are not used (in the hosted image the app's own read-write setting
 stand in for the file's read-only ones; the tool prints a note naming any it ignores). Without `--source` they come from
 the environment.
 
-| Variable                                   | What it is                                          |
-| ------------------------------------------ | --------------------------------------------------- |
-| `LEGACY_SQL_CONNECTION_STRING`             | The old database                                    |
-| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | The old storage account of definitions and history  |
-| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | The old storage account of responses and event logs |
+| Variable                                   | What it is                                                     |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `LEGACY_SQL_CONNECTION_STRING`             | The old database                                               |
+| `LEGACY_SURVEYS_STORAGE_CONNECTION_STRING` | The old storage account of definitions, history and event logs |
+| `LEGACY_RESULTS_STORAGE_CONNECTION_STRING` | The old storage account of responses                           |
 
 Use read-only credentials: a read-only SQL login, and storage and file-share access that can read and list only. The
 tool never writes, but a credential that cannot write is a second guard. For the local replica use
@@ -50,14 +50,23 @@ Every command but `wipe` prints the source it opened, by names only (the SQL ser
 accounts; never a key or a password), and first checks that every store it reads answers: the file shares, the
 containers and the event table every source holds, and the results account's table list. One that does not answer is
 named and the command refuses (exit 2) before anything is written: credentials that cannot read the file shares would
-otherwise read as "no file", and the copy would take none. `copy` records the source in the target; `verify`, `delta`
-and `reconcile` refuse (exit 2) another one, so a `reconcile` against the wrong stores cannot remove what they lack. The
-names are the same for a read-only and a read-write login to the same stores. A target copied before sources were
-recorded takes the source of its next run, with a printed note.
+otherwise read as "no file", and the copy would take none. It also refuses a results account that lists no response
+table while the SQL database holds surveys, and a remote source whose two storage settings name the same account: a
+wrong results account that exists would read as "no responses". `copy` records the source in the target; `verify`,
+`delta` and `reconcile` refuse (exit 2) another one, so a `reconcile` against the wrong stores cannot remove what they
+lack. The names are the same for a read-only and a read-write login to the same stores. A target copied before sources
+were recorded takes the source of its next run, with a printed note. That does not make it current: any target the
+tool copied before 2026-11-26 must be wiped and copied again. It holds private lists from the old rule, response ids
+taken from a field of the row, times put in for rows without one, no published-snapshot entries, and event payloads
+with respondent addresses.
 
 `plan` and `copy` also print the SQL server's offset from UTC and the defaults of the change-time columns: the
 high-water marks assume the database stamps those times on UTC. `copy` refuses (exit 2) when a default takes the
-server's local time and the server is not on UTC, before the target is opened.
+server's local time and the server is not on UTC, before the target is opened. A server whose time zone is on UTC in
+winter but keeps daylight saving time passes this check in winter with such defaults, and its times move an hour at
+the change: run the copy and the window on the same side of a change, or ask the SurveyJS team. A default the login
+may not read (`unreadable`: it lacks VIEW DEFINITION) and a trigger that sets the times are not checked: confirm them
+by hand.
 
 **The target** comes from the file given to `--target`; the environment is not used, so a shell that happens to hold
 the production settings cannot reach production by mistake.
