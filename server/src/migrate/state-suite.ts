@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase, type SqlDatabase, type SqlDialectName } from "../sql/database.js";
 import { migrate } from "../sql/migrator.js";
 import { scratchDatabase, type ScratchDatabase } from "../sql/scratch-databases.js";
-import { createMigrationState, type MigrationState } from "./state.js";
+import { createMigrationState, Refused, requireSameSource, type MigrationState } from "./state.js";
 
 /** The migration tool's state store on one dialect. */
 export function describeMigrationStateSuite(dialect: SqlDialectName): void {
@@ -72,6 +72,23 @@ export function describeMigrationStateSuite(dialect: SqlDialectName): void {
       await state.delete("survey:none");
       expect(await state.keys("survey:")).toEqual(["survey:b"]);
       expect(await state.get("survey:a")).toBeNull();
+    });
+
+    it("records the source when the target has none, keeps it, and refuses another", async () => {
+      const at = "2026-11-26T10:00:00.000Z";
+      const one = {
+        sqlServer: "db.example.net",
+        sqlDatabase: "legacy",
+        surveysAccount: "surveys1",
+        resultsAccount: "results1",
+      };
+      expect(await requireSameSource(state, one, at)).toBe("recorded");
+      expect(await state.get("source")).toEqual(one);
+      expect(await requireSameSource(state, { ...one }, at)).toBe("same");
+      await expect(
+        requireSameSource(state, { ...one, resultsAccount: "results2" }, at),
+      ).rejects.toThrow(Refused);
+      expect(await state.get("source")).toEqual(one);
     });
 
     it("clears everything", async () => {

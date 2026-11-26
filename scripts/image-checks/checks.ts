@@ -703,6 +703,26 @@ const hostedOnly: Check = async (run, { image }) => {
   if (refused.code !== 2 || !refused.stderr.includes("part of the hosted edition only")) {
     failed("surveyjs-studio migrate-hosted --help (expected a refusal, exit 2)", refused);
   }
+  // Started as the hosted edition, the image still has no tool: the same refusal, not a crash.
+  const asHosted = await docker([
+    "run",
+    "--rm",
+    "--name",
+    run.name("hosted-only", "migrate-hosted-edition"),
+    "-e",
+    "APP_EDITION=hosted",
+    "--entrypoint",
+    "surveyjs-studio",
+    image,
+    "migrate-hosted",
+    "--help",
+  ]);
+  if (asHosted.code !== 2 || !asHosted.stderr.includes("part of the hosted edition only")) {
+    failed(
+      "APP_EDITION=hosted surveyjs-studio migrate-hosted --help (expected a refusal, exit 2)",
+      asHosted,
+    );
+  }
   return PASS;
 };
 

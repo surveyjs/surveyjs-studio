@@ -21,14 +21,20 @@ export interface ShareSource {
 
 /**
  * The legacy file shares, read only. `shares` undefined: the provider's own reader over the
- * connection strings; null: no shares (every file reads as unknown).
+ * connection strings, whose warnings (a share it cannot use) go to `warn`; null: no shares (every
+ * file reads as unknown).
  */
 export function openShareSource(
   legacy: Pick<LegacyConfig, "surveysStorageConnectionString" | "resultsStorageConnectionString">,
   shares?: ListingShareReader | null,
+  warn: (message: string) => void = () => undefined,
 ): ShareSource {
   const reader: LegacyShareReader | null =
-    shares === undefined ? createLegacyShareReader(legacy, { warn: () => undefined }) : shares;
+    shares === undefined
+      ? createLegacyShareReader(legacy, {
+          warn: (details, message) => warn(`${message} ${JSON.stringify(details)}`),
+        })
+      : shares;
 
   const connectionStringOf = (share: LegacyShare) =>
     share === "surveyfiles"

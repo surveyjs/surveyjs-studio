@@ -12,7 +12,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { openByteStore, type ByteStore } from "../bytes/index.js";
-import { parseFlags, safeErrorText, withEnvFile, type CliEnv, type CliIo } from "../cli/common.js";
+import {
+  parseFlags,
+  readEnvFile,
+  safeErrorText,
+  withEnvFile,
+  type CliEnv,
+  type CliIo,
+} from "../cli/common.js";
 import { ConfigError, loadConfig, type LegacyConfig } from "../config.js";
 import { LEGACY_VARIABLES } from "../legacy/endpoint-guard.js";
 import { measureLegacyStores } from "../legacy/stats-source.js";
@@ -27,7 +34,9 @@ import { createReport, type Report } from "./map/report.js";
 import { runPlan } from "./plan.js";
 import { runReconcile } from "./reconcile.js";
 import { selectSample, type SampleSet } from "./sample.js";
+import { describeSource, sourceFingerprint, type SourceFingerprint } from "./source/fingerprint.js";
 import { openLegacySource, type LegacySource } from "./source/index.js";
+import { probeLegacySource } from "./source/probe.js";
 import type { ListingShareReader } from "./source/shares.js";
 import { Refused } from "./state.js";
 import { openMigrationTarget } from "./target.js";
@@ -45,6 +54,7 @@ Commands:
   copy        Copy everything (or a sample); a stopped run is resumed by running it again
   verify      Compare the target with the source as of the copy's high-water marks
               (incremental; --full compares everything). Exit 1 on any difference
+              (with --no-pending, also on any pending item)
   delta       Copy what changed in the source since the last copy or delta
   reconcile   Remove from the target what the source deleted, and re-map changed surveys
   wipe        Empty the target: every table but schema_migrations and every stored file
@@ -52,8 +62,9 @@ Commands:
 Options:
   --source <env file>   The legacy stores: LEGACY_SQL_CONNECTION_STRING,
                         LEGACY_SURVEYS_STORAGE_CONNECTION_STRING and
-                        LEGACY_RESULTS_STORAGE_CONNECTION_STRING; read from the environment
-                        when not given (variables already set win over the file)
+                        LEGACY_RESULTS_STORAGE_CONNECTION_STRING. Given, they come from the
+                        file only (the environment's are not used); otherwise from the
+                        environment
   --target <env file>   The target: STORAGE_PROVIDER (sqlite or postgres), SQLITE_PATH or
                         DATABASE_URL, FILE_STORE, FILES_PATH or S3_*; the environment is not
                         used. Needed by verify, delta, reconcile and wipe. copy without it uses a
@@ -70,13 +81,19 @@ Options:
   --deep-sample <n>     verify --full: surveys compared response by response (default 20)
   --deep-max-responses <n>
                         verify: skip that walk for a survey with more responses (default 50000)
+  --no-pending          verify: a pending item (a source record changed after the marks) fails
+                        the run too (exit 1); the window's verify uses it
   --confirm <name>      wipe: the target's name (the PostgreSQL database name, or the SQLite
                         file's name); wipe refuses without it and without --target
+  --even-if-used        wipe: wipe a target that shows use (somebody signed in, or a sign-in
+                        other than the migrated one); wipe refuses such a target without it
   --help                Show this text
 
-verify, delta and reconcile refuse (exit 2) a --sample or --include other than the copy's;
-delta and reconcile refuse a target whose copy has not finished. The report and the progress
-lines give each phase's duration.
+Every command but wipe prints the source it opened (server, database and account names) and
+first checks that every store it reads answers; it refuses (exit 2) one that does not. copy
+records the source in the target; verify, delta and reconcile refuse (exit 2) another source,
+and a --sample or --include other than the copy's; delta and reconcile refuse a target whose
+copy has not finished. The report and the progress lines give each phase's duration.
 
 Exit codes: 0 done or green, 1 failed or differences found, 2 usage error or refused`;
 
@@ -109,6 +126,8 @@ export type ParsedArgs =
       deepSample: number | null;
       deepMaxResponses: number | null;
       confirm: string | null;
+      noPending: boolean;
+      evenIfUsed: boolean;
     }
   | { kind: "help" }
   | { kind: "usage-error"; message: string };
@@ -128,7 +147,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   const at = commandIndex(argv);
   const parsed = parseFlags(
     argv.filter((_, i) => i !== at),
-    { options: OPTIONS, switches: ["--full"] },
+    { options: OPTIONS, switches: ["--full", "--no-pending", "--even-if-used"] },
   );
   if (parsed.kind !== "run") return parsed;
   const command = argv[at];
@@ -172,6 +191,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     deepSample,
     deepMaxResponses: deepMax,
     confirm: value("--confirm"),
+    noPending: parsed.switches.has("--no-pending"),
+    evenIfUsed: parsed.switches.has("--even-if-used"),
   };
 }
 
@@ -190,8 +211,11 @@ export interface OpenedTarget {
 export interface MigrateDeps {
   /** Default `process.env`; the source settings come from it (and `--source`). */
   env?: CliEnv;
-  /** Default `openLegacySource` with `shares`. */
-  openSource?: (legacy: LegacyConfig) => LegacySource;
+  /**
+   * Default: `probeLegacySource` (every store answers, or a refusal), then `openLegacySource`
+   * with `shares`.
+   */
+  openSource?: (legacy: LegacyConfig) => LegacySource | Promise<LegacySource>;
   /** Default: the database and file store the `--target` file's settings name. */
   openTarget?: (env: Readonly<Record<string, string | undefined>>) => OpenedTarget;
   /** The legacy file shares; undefined: the real ones (the local replica has none: a stub). */
@@ -275,7 +299,7 @@ export async function run(
   // Everything that can be wrong with the arguments is found before anything is opened.
   if (command === "wipe") {
     if (args.target === null) return usage("wipe needs --target: it never wipes a scratch target.");
-    if (args.confirm === null) {
+    if (args.confirm === null || args.confirm.trim() === "") {
       return usage(
         "wipe needs --confirm <target name> (the database name or the SQLite file name).",
       );
@@ -305,18 +329,32 @@ export async function run(
     if (targetEnv === null) return usage(`Cannot read the env file: ${args.target}`);
   }
   let legacy: LegacyConfig | null = null;
+  let fingerprint: SourceFingerprint | undefined;
   if (command !== "wipe") {
     let env: CliEnv = deps.env ?? process.env;
     if (args.source !== null) {
-      const loaded = withEnvFile(env, args.source);
-      if (loaded === null) return usage(`Cannot read the env file: ${args.source}`);
-      env = loaded;
+      // The file's settings, and only those: in the hosted image the app's own (read-write)
+      // LEGACY_* are in the environment, and must not stand in for the file's read-only ones.
+      const file = readEnvFile(args.source);
+      if (file === null) return usage(`Cannot read the env file: ${args.source}`);
+      const ignored = LEGACY_VARIABLES.filter(
+        (name) => env[name]?.trim() && env[name]?.trim() !== file[name]?.trim(),
+      );
+      if (ignored.length > 0) {
+        io.err(
+          `Note: --source is given, so ${ignored.join(", ")} from the environment ` +
+            "are not used.\n",
+        );
+      }
+      env = Object.fromEntries(LEGACY_VARIABLES.map((name) => [name, file[name]]));
     }
     const missing = LEGACY_VARIABLES.filter((name) => !env[name]?.trim());
     if (missing.length > 0) {
       return usage(
-        `Not set: ${missing.join(", ")}. Set them, or pass --source <env file> ` +
-          "(docker/azurite.env for the local replica).",
+        `Not set: ${missing.join(", ")}. ` +
+          (args.source !== null
+            ? `Set them in ${args.source}.`
+            : "Set them, or pass --source <env file> (docker/azurite.env for the local replica)."),
       );
     }
     legacy = {
@@ -324,6 +362,8 @@ export async function run(
       surveysStorageConnectionString: env.LEGACY_SURVEYS_STORAGE_CONNECTION_STRING!.trim(),
       resultsStorageConnectionString: env.LEGACY_RESULTS_STORAGE_CONNECTION_STRING!.trim(),
     };
+    fingerprint = sourceFingerprint(legacy);
+    io.out(`Source: ${describeSource(fingerprint)}.\n`);
   }
 
   const report: Report = createReport();
@@ -332,6 +372,21 @@ export async function run(
   let dump: DumpWriter | null = null;
   let databaseClosed = false;
   try {
+    // The source first: a source that does not answer is refused before the target is opened
+    // (or created, or migrated).
+    if (legacy !== null) {
+      const open =
+        deps.openSource ??
+        (async (l: LegacyConfig) => {
+          await probeLegacySource(l, { shares: deps.shares });
+          return openLegacySource(l, {
+            shares: deps.shares,
+            warn: (message) => io.err(`warning: ${message}\n`),
+          });
+        });
+      source = await open(legacy);
+    }
+
     if (command !== "plan") {
       if (targetEnv !== null) {
         opened = (deps.openTarget ?? openFromSettings)(targetEnv);
@@ -347,6 +402,12 @@ export async function run(
 
     if (command === "wipe") {
       const target = opened!;
+      if (target.name.trim() === "") {
+        return usage(
+          "Refused: the target names no database (DATABASE_URL without a database name). " +
+            "Nothing was changed.",
+        );
+      }
       if (target.name !== args.confirm) {
         return usage(
           `Refused: --confirm does not match the target's name (${target.name}). ` +
@@ -358,6 +419,7 @@ export async function run(
       }
       const result = await wipeTarget(target.database, target.bytes, {
         localRoot: target.localRoot,
+        evenIfUsed: args.evenIfUsed,
       });
       io.out(
         `Wiped ${target.name}: ${result.rows} rows in ${result.tables} tables, ` +
@@ -371,7 +433,7 @@ export async function run(
     }
 
     if (opened !== null) await migrate(opened.database);
-    source = (deps.openSource ?? ((l) => openLegacySource(l, { shares: deps.shares })))(legacy!);
+    if (source === null) throw new Error("unreachable: no source");
 
     let sample: SampleSet | undefined;
     if (args.sample !== null || args.include !== null) {
@@ -387,6 +449,7 @@ export async function run(
     }
     const sampled = sample ? { sample } : {};
     const dumped = dump ? { dump } : {};
+    const fingerprinted = fingerprint ? { fingerprint } : {};
 
     if (command === "plan") {
       const plan = await runPlan(source, {
@@ -412,11 +475,24 @@ export async function run(
     const target = openMigrationTarget(opened!.database, opened!.bytes);
     let ok = true;
     if (command === "copy") {
-      await runCopy(source, target, { report, ...sampled, ...dumped, full: args.full, progress });
+      await runCopy(source, target, {
+        report,
+        ...sampled,
+        ...dumped,
+        ...fingerprinted,
+        full: args.full,
+        progress,
+      });
     } else if (command === "delta") {
-      await runDelta(source, target, { report, ...sampled, ...dumped, progress });
+      await runDelta(source, target, { report, ...sampled, ...dumped, ...fingerprinted, progress });
     } else if (command === "reconcile") {
-      await runReconcile(source, target, { report, ...sampled, full: args.full, progress });
+      await runReconcile(source, target, {
+        report,
+        ...sampled,
+        ...fingerprinted,
+        full: args.full,
+        progress,
+      });
     } else {
       const sourceProviders = createAzureLegacyProviders(legacy!, {
         ...(deps.shares !== undefined && { legacyShares: deps.shares }),
@@ -431,6 +507,7 @@ export async function run(
           ...sampled,
           deepSample: args.deepSample ?? 20,
           ...(args.deepMaxResponses !== null && { deepMaxResponses: args.deepMaxResponses }),
+          ...fingerprinted,
           report,
           progress,
         }));
@@ -443,12 +520,18 @@ export async function run(
     }
 
     const counts = report.counts();
-    const differences = Object.entries(counts)
-      .filter(([key]) => key.startsWith("difference:"))
-      .reduce((sum, [, n]) => sum + n, 0);
+    const total = (prefix: string) =>
+      Object.entries(counts)
+        .filter(([key]) => key.startsWith(prefix))
+        .reduce((sum, [, n]) => sum + n, 0);
+    const differences = total("difference:");
+    const pending = total("pending:");
+    // The window's verify: a record changed after the marks means the source was not frozen.
+    if (command === "verify" && args.noPending && pending > 0) ok = false;
     io.out(
       command === "verify"
-        ? `verify${args.full ? " --full" : ""}: ${ok ? "OK" : "FAILED"}, ${differences} differences\n`
+        ? `verify${args.full ? " --full" : ""}: ${ok ? "OK" : "FAILED"}, ` +
+            `${differences} differences, ${pending} pending\n`
         : `${command}: done\n`,
     );
     if (Object.keys(counts).length > 0) io.out(`Report counts:\n${lines(counts)}`);

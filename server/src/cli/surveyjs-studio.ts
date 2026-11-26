@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { runBackup, runRestore } from "./backup.js";
-import type { CliEnv, CliIo } from "./common.js";
+import { describeUnexpected, type CliEnv, type CliIo } from "./common.js";
 import { run as runDb } from "./db.js";
 import { run as runPurge } from "./purge-deleted-responses.js";
 import { run as runRebaseUrls } from "./rebase-urls.js";
@@ -40,10 +40,20 @@ Exit codes: 0 success, 1 failure, 2 usage error`;
 export const usage = (env: CliEnv): string =>
   env.APP_EDITION === "self-hosted" ? USAGE.replace(MIGRATE_HOSTED, "") : USAGE;
 
+type MigrateHostedRun = (
+  argv: readonly string[],
+  io: CliIo,
+  deps: { env?: CliEnv },
+) => Promise<number>;
+
 export interface SurveyjsStudioDeps {
   /** Default `process.env` (never changed). */
   readonly env?: CliEnv;
+  /** Default: imports `../migrate/cli.js` (absent from the self-hosted image). Tests only. */
+  readonly loadMigrateHosted?: () => Promise<{ run: MigrateHostedRun }>;
 }
+
+const HOSTED_ONLY = "migrate-hosted is part of the hosted edition only.\n";
 
 /** Runs one subcommand. Returns the exit code; never throws. */
 export async function run(
@@ -72,12 +82,25 @@ export async function run(
       return runPurge(rest, io, deps);
     case "migrate-hosted": {
       if ((deps.env ?? process.env).APP_EDITION === "self-hosted") {
-        io.err("migrate-hosted is part of the hosted edition only.\n");
+        io.err(HOSTED_ONLY);
         return 2;
       }
       // Loaded only when asked for: the other commands need none of the legacy store clients.
-      const { run: runMigrateHosted } = await import("../migrate/cli.js");
-      return runMigrateHosted(rest, io, deps);
+      let runMigrateHosted: MigrateHostedRun;
+      try {
+        ({ run: runMigrateHosted } = await (
+          deps.loadMigrateHosted ?? (() => import("../migrate/cli.js"))
+        )());
+      } catch (error) {
+        // The self-hosted image removes the tool, whatever APP_EDITION it is started with.
+        if ((error as { code?: unknown } | null)?.code === "ERR_MODULE_NOT_FOUND") {
+          io.err(HOSTED_ONLY);
+          return 2;
+        }
+        io.err(`Error: ${describeUnexpected(error)}\n`);
+        return 1;
+      }
+      return runMigrateHosted(rest, io, { ...(deps.env !== undefined && { env: deps.env }) });
     }
     case "s3-bucket":
       return runS3Bucket(rest, io, { ...(deps.env ?? process.env) });

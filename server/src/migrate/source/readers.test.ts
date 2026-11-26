@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The SQL driver, faked: the first connect fails, later ones succeed with an empty table.
 const connect = vi.fn();
@@ -15,8 +15,18 @@ vi.mock("mssql", () => {
   return { default: { ConnectionPool, DateTime: "DateTime", Int: "Int", UniqueIdentifier: "Uid" } };
 });
 
-// The table SDK, faked: each table lists the entities `tables` holds under its name.
-const { tables } = vi.hoisted(() => ({ tables: new Map<string, Record<string, unknown>[]>() }));
+// The storage SDKs, faked. Tables list the entities `tables` holds under their name; a name in
+// `missing` answers 404 (as a table, container or share that does not exist); `refused` 403.
+const { tables, blobLists, missing, refused } = vi.hoisted(() => ({
+  tables: new Map<string, Record<string, unknown>[]>(),
+  blobLists: new Map<string, Record<string, unknown>[]>(),
+  missing: new Set<string>(),
+  refused: new Set<string>(),
+}));
+const answerFor = (name: string) => {
+  if (missing.has(name)) throw Object.assign(new Error("not found"), { statusCode: 404 });
+  if (refused.has(name)) throw Object.assign(new Error("refused"), { statusCode: 403 });
+};
 vi.mock("@azure/data-tables", async (importOriginal) => {
   const real = await importOriginal<typeof import("@azure/data-tables")>();
   return {
@@ -26,10 +36,75 @@ vi.mock("@azure/data-tables", async (importOriginal) => {
         listEntities: () => ({
           byPage: () =>
             (async function* () {
+              answerFor(name);
               yield tables.get(name) ?? [];
             })(),
         }),
       }),
+    },
+    TableServiceClient: {
+      fromConnectionString: () => ({
+        listTables: () =>
+          (async function* () {
+            answerFor("(table list)");
+            yield* [...tables.keys()].map((name) => ({ name }));
+          })(),
+      }),
+    },
+  };
+});
+vi.mock("@azure/storage-blob", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@azure/storage-blob")>();
+  return {
+    ...real,
+    BlobServiceClient: {
+      fromConnectionString: () => ({
+        getContainerClient: (name: string) => ({
+          getProperties: async () => {
+            answerFor(name);
+            return { date: new Date() };
+          },
+          listBlobsFlat: () =>
+            (async function* () {
+              answerFor(name);
+              yield* blobLists.get(name) ?? [];
+            })(),
+          getBlobClient: () => ({
+            getProperties: async () => {
+              throw Object.assign(new Error("not found"), { statusCode: 404 });
+            },
+          }),
+        }),
+      }),
+    },
+  };
+});
+// The file SDK: a connection string with a file endpoint or an account name gets a fake share
+// service; any other goes to the real SDK (which cannot use it).
+vi.mock("@azure/storage-file-share", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@azure/storage-file-share")>();
+  return {
+    ...real,
+    ShareServiceClient: {
+      fromConnectionString: (connection: string) => {
+        if (!/FileEndpoint=|AccountName=/.test(connection)) {
+          return real.ShareServiceClient.fromConnectionString(connection);
+        }
+        return {
+          getShareClient: (share: string) => ({
+            rootDirectoryClient: {
+              listFilesAndDirectories: () => ({
+                byPage: () => ({
+                  next: async () => {
+                    answerFor(`share:${share}`);
+                    return { done: false, value: { segment: { fileItems: [] } } };
+                  },
+                }),
+              }),
+            },
+          }),
+        };
+      },
     },
   };
 });
@@ -37,8 +112,19 @@ vi.mock("@azure/data-tables", async (importOriginal) => {
 const { openSqlSource } = await import("./sql.js");
 const { openShareSource } = await import("./shares.js");
 const { openTableSource } = await import("./tables.js");
+const { openBlobSource } = await import("./blobs.js");
+const { probeLegacySource } = await import("./probe.js");
+const { Refused } = await import("../state.js");
+const { LegacyStoreError } = await import("../../providers/azure-legacy/errors.js");
 const { eventRec } = await import("../copy.js");
 const { createReport } = await import("../map/report.js");
+
+beforeEach(() => {
+  tables.clear();
+  blobLists.clear();
+  missing.clear();
+  refused.clear();
+});
 
 async function collect<T>(items: AsyncIterable<T>): Promise<T[]> {
   const found: T[] = [];
@@ -199,5 +285,136 @@ describe("the table readers, as the app reads the rows", () => {
         ],
       });
     });
+  });
+});
+
+describe("a store that answers 404", () => {
+  const POST = "33333333-0000-4000-8000-A00000000001";
+  const SURVEY = "22222222-0000-4000-8000-A00000000001";
+  const local = {
+    surveysStorageConnectionString: "UseDevelopmentStorage=true",
+    resultsStorageConnectionString: "UseDevelopmentStorage=true",
+  };
+
+  it("is an error for the event table, and no rows for the tables made on first use", async () => {
+    const source = openTableSource(local);
+    missing.add("surveys");
+    await expect(collect(source.events())).rejects.toThrow(LegacyStoreError);
+    for (const name of [
+      "post33333333000040008000a00000000001",
+      "postdelete33333333000040008000a00000000001",
+      "SurveyCompletion22222222000040008000a00000000001",
+      "mysurveysapitokens",
+    ]) {
+      missing.add(name);
+    }
+    expect(await collect(source.responses(POST))).toEqual([]);
+    expect(await collect(source.deletedCopies(POST))).toEqual([]);
+    expect(await collect(source.markers(SURVEY))).toEqual([]);
+    expect(await collect(source.ownTokenRows())).toEqual([]);
+  });
+
+  it("is an error for a container every source holds, and empty for those made on first use", async () => {
+    const source = openBlobSource("UseDevelopmentStorage=true");
+    for (const name of [
+      "surveyjsonhistory",
+      "surveyresulttablestate",
+      "surveyresultsummarystate",
+      "surveyresultcolumns",
+      "surveyresultpermissions",
+      "my-surveys-views",
+      "my-surveys-files",
+      "surveypublishedjson",
+    ]) {
+      missing.add(name);
+    }
+    await expect(source.historyEntries(SURVEY)).rejects.toThrow(LegacyStoreError);
+    await expect(collect(source.layoutNames("table"))).rejects.toThrow(LegacyStoreError);
+    await expect(collect(source.changedBlobs("layouts", new Date(0)))).rejects.toThrow(
+      LegacyStoreError,
+    );
+    await expect(collect(source.changedBlobs("permissions", new Date(0)))).rejects.toThrow(
+      LegacyStoreError,
+    );
+    expect(await collect(source.views())).toEqual([]);
+    expect(await collect(source.appFiles())).toEqual([]);
+    expect(await collect(source.changedBlobs("views", new Date(0)))).toEqual([]);
+    expect(await collect(source.changedBlobs("published", new Date(0)))).toEqual([]);
+  });
+});
+
+describe("opening a source: every store the tool reads is checked first", () => {
+  const remote = "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=a2V5";
+  const both = (value: string) => ({
+    sqlConnectionString: "Server=sql.invalid",
+    surveysStorageConnectionString: value,
+    resultsStorageConnectionString: value,
+  });
+  /** The refusal's message; "" when the probe passes. */
+  const refusal = async (probe: Promise<void>): Promise<string> => {
+    try {
+      await probe;
+      return "";
+    } catch (error) {
+      expect(error).toBeInstanceOf(Refused);
+      return (error as Error).message;
+    }
+  };
+
+  it("refuses a remote source whose connection string cannot reach the file shares", async () => {
+    // A read-only SAS without a file endpoint.
+    const sas =
+      "BlobEndpoint=https://acct.blob.core.windows.net/;" +
+      "TableEndpoint=https://acct.table.core.windows.net/;" +
+      "SharedAccessSignature=sv=2022-11-02&ss=bt&srt=sco&sp=rl&sig=abc";
+    const message = await refusal(probeLegacySource(both(sas)));
+    expect(message).toContain("share surveyfiles (LEGACY_SURVEYS_STORAGE_CONNECTION_STRING)");
+    expect(message).toContain("share files (LEGACY_RESULTS_STORAGE_CONNECTION_STRING)");
+    expect(message).not.toContain("sig=abc");
+  });
+
+  it("refuses a share that does not exist or cannot be listed, naming it", async () => {
+    missing.add("share:files");
+    expect(await refusal(probeLegacySource(both(remote)))).toMatch(
+      /share files \(LEGACY_RESULTS_STORAGE_CONNECTION_STRING\): it does not exist/,
+    );
+    missing.clear();
+    refused.add("share:surveyfiles");
+    expect(await refusal(probeLegacySource(both(remote)))).toMatch(/share surveyfiles .*403/);
+  });
+
+  it("takes the local replica (no file service) and a given share reader as reachable", async () => {
+    expect(await refusal(probeLegacySource(both("UseDevelopmentStorage=true")))).toBe("");
+    const stub = { read: () => Promise.resolve(null) };
+    missing.add("share:files");
+    expect(await refusal(probeLegacySource(both(remote), { shares: stub }))).toBe("");
+    missing.clear();
+    expect(await refusal(probeLegacySource(both(remote)))).toBe("");
+  });
+
+  it("refuses a source without a container or table every source holds, naming each", async () => {
+    missing.add("surveyjsonhistory");
+    missing.add("surveys");
+    const message = await refusal(probeLegacySource(both("UseDevelopmentStorage=true")));
+    expect(message).toMatch(/container surveyjsonhistory.*table surveys/);
+    missing.clear();
+    refused.add("(table list)");
+    expect(await refusal(probeLegacySource(both("UseDevelopmentStorage=true")))).toMatch(
+      /table list.*403/,
+    );
+  });
+
+  it("warns, not silently, when the share reader cannot use a connection string", async () => {
+    const sas =
+      "BlobEndpoint=https://acct.blob.core.windows.net/;SharedAccessSignature=sv=2022-11-02&sig=abc";
+    const warnings: string[] = [];
+    const shares = openShareSource(
+      { surveysStorageConnectionString: sas, resultsStorageConnectionString: sas },
+      undefined,
+      (message) => warnings.push(message),
+    );
+    expect(await shares.shareFile("surveyfiles", "logo.png")).toBeNull();
+    expect(warnings.join("\n")).toContain("LEGACY_SURVEYS_STORAGE_CONNECTION_STRING");
+    expect(warnings.join("\n")).not.toContain("sig=abc");
   });
 });

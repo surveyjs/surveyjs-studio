@@ -31,8 +31,10 @@ run long commands under `nohup` or in a terminal multiplexer, and keep their out
 
 ## The settings
 
-**The source** (the old stores) comes from three variables, read from the environment or from the file given to
-`--source` (a variable already set wins over the file):
+**The source** (the old stores) comes from three variables. Given `--source`, they come from that file only: the
+environment's are not used (in the hosted image the app's own read-write settings are in the environment, and must not
+stand in for the file's read-only ones; the tool prints a note naming any it ignores). Without `--source` they come from
+the environment.
 
 | Variable                                   | What it is                                          |
 | ------------------------------------------ | --------------------------------------------------- |
@@ -43,6 +45,15 @@ run long commands under `nohup` or in a terminal multiplexer, and keep their out
 Use read-only credentials: a read-only SQL login, and storage and file-share access that can read and list only. The
 tool never writes, but a credential that cannot write is a second guard. For the local replica use
 `--source docker/azurite.env`.
+
+Every command but `wipe` prints the source it opened, by names only (the SQL server and database, the two storage
+accounts; never a key or a password), and first checks that every store it reads answers: the file shares, the
+containers and the event table every source holds, and the results account's table list. One that does not answer is
+named and the command refuses (exit 2) before anything is written: credentials that cannot read the file shares would
+otherwise read as "no file", and the copy would take none. `copy` records the source in the target; `verify`, `delta`
+and `reconcile` refuse (exit 2) another one, so a `reconcile` against the wrong stores cannot remove what they lack. The
+names are the same for a read-only and a read-write login to the same stores. A target copied before sources were
+recorded takes the source of its next run, with a printed note.
 
 **The target** comes from the file given to `--target`; the environment is not used, so a shell that happens to hold
 the production settings cannot reach production by mistake.
@@ -73,7 +84,7 @@ whose `copy` has not finished (a stopped copy is run again until it ends with `c
 
 | Option                     | Meaning                                                                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `--source <env file>`      | The source settings, when they are not in the environment                                                                |
+| `--source <env file>`      | The source settings; given, the environment's are not used                                                               |
 | `--target <env file>`      | The target settings (see above)                                                                                          |
 | `--sample <share>`         | Only a share (0 to 1) of the accounts, with their projects: `plan`, `copy`, `verify`, `delta`, `reconcile`               |
 | `--include <file>`         | Accounts always in the sample: a file of account ids, one per line                                                       |
@@ -82,11 +93,14 @@ whose `copy` has not finished (a stopped copy is run again until it ends with `c
 | `--full`                   | `copy`: copy again the surveys already copied. `verify`: compare everything. `reconcile`: count every survey's responses |
 | `--deep-sample <n>`        | `verify --full`: how many surveys are compared response by response (default 20)                                         |
 | `--deep-max-responses <n>` | `verify`: surveys with more responses get counts and checksums only (default 50000)                                      |
+| `--no-pending`             | `verify`: a pending item fails the run too (exit 1). The window's `verify` uses it                                       |
 | `--confirm <name>`         | `wipe`: the target's name, the PostgreSQL database name or the SQLite file's name                                        |
+| `--even-if-used`           | `wipe`: wipe a target that shows use ([`wipe`](#wipe)); without it such a target is refused                              |
 
 Exit codes: 0 done or green, 1 failed or differences found, 2 a usage error or a refusal (a missing flag, a refused
-`wipe`, a sample other than the copy's, a copy that has not finished). A refused command changes nothing. The progress
-goes to the error output; the summary and the counts of the report go to the standard output.
+`wipe`, a store of the source that does not answer, a source or a sample other than the copy's, a copy that has not
+finished). A refused command changes nothing. The progress goes to the error output; the summary and the counts of the
+report go to the standard output.
 
 ### The sample
 
@@ -111,8 +125,9 @@ delete everything outside the new one. To copy something else into a target, `wi
 4. **The day before the window,** after that day's `delta` and `reconcile`: `verify --full`. Read the report; fix or
    explain every difference.
 5. **In the window,** once the old service is stopped and today's Studio is read-only: the final `delta` (its marks are
-   taken after the freeze), `reconcile`, then an incremental `verify`. All three pass: go. Any difference: no-go, and the
-   old side starts again ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
+   taken after the freeze), `reconcile`, then an incremental `verify --no-pending` (after the freeze nothing may be
+   pending). All three pass: go. Any difference: no-go, and the old side starts again
+   ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
 
 Do not run two commands against one target at the same time.
 
@@ -193,14 +208,16 @@ is corrected and a `delta` or `copy --full` runs again.
 
 ## Reading a `verify`
 
-`verify` writes `verify: OK` or `verify: FAILED, <n> differences`, and exits 0 or 1.
+`verify` writes `verify: OK` or `verify: FAILED`, then `<n> differences, <m> pending`, and exits 0 or 1. With
+`--no-pending` a pending item fails the run as a difference does.
 
 - **A difference** means the target does not match the source as of the high-water marks. Any difference is a no-go:
   find the cause (the ids are in the report), correct it, and run `delta` or `copy --full` and `verify` again. Never
   start the window with a known difference.
 - **Pending** is not a difference. A record that changed in the source after the marks is listed under `pending` and
   left out of the comparison on both sides. The next `delta` copies it. Many pending items before the window are normal
-  (the old service is live); in the window, after the freeze, there should be none.
+  (the old service is live); in the window, after the freeze, there must be none: the window's `verify` runs with
+  `--no-pending`, so one fails it.
 - **People:** an account the migration did not create (an administrator, an account made at sign-in) is noted, not a
   difference; so is a person the copy could not write because the target holds their email or sign-in. Of a profile
   somebody has used since the copy, only what the migration owns is compared. A profile the migration created that the
@@ -225,11 +242,16 @@ is corrected and a `delta` or `copy --full` runs again.
 ## `wipe`
 
 `wipe` empties the target after the test migration, or for a restart before the cutover. It needs `--target`, and
-`--confirm` with the target's name, and refuses otherwise (and it never wipes a scratch target).
+`--confirm` with the target's name, and refuses otherwise (and it never wipes a scratch target, nor a target whose
+settings name no database).
 
 ```sh
 pnpm migrate:hosted wipe --target <env file> --confirm <the database name or the SQLite file name>
 ```
+
+- **A target that shows use is refused:** a user who has signed in, or a sign-in other than the surveyjs.io one the
+  migration writes for each person. After the cutover the target is production, and its env file names the production
+  database. `--even-if-used` wipes such a target anyway; it is meant for a rehearsal target someone signed in to.
 
 - It deletes every table's rows in one transaction, children before parents, and keeps the schema and
   `schema_migrations`. It deletes the stored bytes first, so a stop in between leaves rows that a second `wipe` finds.
@@ -248,7 +270,8 @@ Before the real runs:
    latest change time each table holds, so its rows count from its own clock. A writer ahead of UTC stamps rows in the
    database's future; the marks are capped at the database's own clock (`future_change_time` is reported), so those rows
    keep reading as changed after the marks: `delta` reads them again and `verify` lists them as pending for as many
-   hours as the writer is ahead, after the freeze too. The window's `verify` then has pending items it cannot clear.
+   hours as the writer is ahead, after the freeze too. The window's `verify --no-pending` then fails on items it cannot
+   clear: settle this before the window.
 3. **The real column list of the old SQL tables.** Run `pnpm inspect:legacy-schema` against the real database, read
    only, and compare it with what the mapping expects.
 4. **Read-only credentials:** a read-only SQL login; storage and file shares with read and list only.

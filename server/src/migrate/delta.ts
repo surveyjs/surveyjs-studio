@@ -38,7 +38,8 @@ import { collectNamed } from "./named.js";
 import type { EventRec, ViewRec } from "./records.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
-import { requireCompleteCopy, requireSameSample } from "./state.js";
+import type { SourceFingerprint } from "./source/fingerprint.js";
+import { guardSource, requireCompleteCopy, requireSameSample } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
 export interface DeltaOptions {
@@ -55,6 +56,11 @@ export interface DeltaOptions {
   progress?: (line: string) => void;
   /** Tests only: the new marks' safety margin (default `MARKS_MARGIN_MS`). */
   marginMs?: number;
+  /**
+   * The source the command line opened (names only): recorded at the first run, and a run on
+   * another source is refused (`guardSource`). Undefined: not checked (tests).
+   */
+  fingerprint?: SourceFingerprint;
 }
 
 /**
@@ -99,6 +105,7 @@ export async function runDelta(
 
   await requireCompleteCopy(state);
   await requireSameSample(state, sample);
+  await guardSource(state, options.fingerprint, at(), progress);
   const marks = await storedMarks(target);
   // Taken before anything is read: whatever changes while this run reads is read again next time.
   const next = await takeMarks(source, now, {

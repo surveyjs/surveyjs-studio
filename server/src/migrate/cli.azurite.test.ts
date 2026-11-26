@@ -227,6 +227,38 @@ describe("migrate:hosted against the local replica", () => {
     }
   });
 
+  it("verify --no-pending fails a run with pending items; verify alone stays green", async () => {
+    const t = sqliteTarget();
+    const table = localTableClient(
+      config.resultsStorageConnectionString,
+      "post33333333000040008000a00000000004",
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+    );
+    const rowId = "66666666-0000-4000-8000-a0000000beef";
+    try {
+      expect(await cli(["copy", "--target", t.envFile], capture().io)).toBe(0);
+      // A response posted after the copy's marks: pending, not a difference.
+      await table.createEntity({
+        partitionKey: "*",
+        rowKey: rowId,
+        id: rowId,
+        happendat: new Date(),
+        result: JSON.stringify({ satisfaction: 4 }),
+      });
+      const green = capture();
+      expect(await cli(["verify", "--full", "--target", t.envFile], green.io)).toBe(0);
+      expect(green.out).toMatch(/verify --full: OK, 0 differences, [1-9]\d* pending/);
+      const strict = capture();
+      expect(
+        await cli(["verify", "--full", "--no-pending", "--target", t.envFile], strict.io),
+      ).toBe(1);
+      expect(strict.out).toMatch(/verify --full: FAILED, 0 differences, [1-9]\d* pending/);
+    } finally {
+      await table.deleteEntity("*", rowId).catch(() => undefined);
+      await t.drop();
+    }
+  });
+
   it("copies and verifies a sample of the accounts", async () => {
     const t = sqliteTarget();
     try {

@@ -231,3 +231,32 @@ recorded above:
   the change time instead of being skipped; deletion copies and events did the same. Events kept the respondent
   address of older rows and upper-case ids in their payload. Completion markers with a flag of another type were not
   reported. Each is now as point 8 says, and the report counts the skipped and re-keyed rows.
+
+## Changed 2026-11-26: source safety and the command line
+
+The same review found ways a misconfigured source could make the tool copy nothing, read the wrong stores, or delete
+data, and some command-line gaps. Fixed, and recorded here (point 2 and point 6 read with these):
+
+- **Every store answers, or the command refuses.** Opening a remote source first checks that both file shares can be
+  listed, and opening any source that the containers and the event table every source holds exist and the results
+  account's tables can be listed; a store that does not answer is named and the command refuses (exit 2) before
+  anything is written. A share the credentials could not read used to read as "no file": the copy took none and
+  `verify` agreed. The share reader's warnings are printed, no longer muted. The local replica has no file service: its
+  shares are not checked.
+- **A missing store is an error, not "empty".** A container or table that answers "not found" fails the run for every
+  command, except the stores a source may lack because they are made on first use: a survey's response, deletion-copy
+  and completion tables, the app's own token table, its file and view containers, and the published-snapshot
+  container. An empty listing of the wrong account would have made `reconcile` remove what the copy took.
+- **The source is the copy's.** `--source` settings come from the file only: the environment's are not used (in the
+  hosted image they are the app's read-write ones). Every command but `wipe` prints the source it opened by names only
+  (the SQL server and database, the two storage accounts). `copy` records those names in the target; `verify`, `delta`
+  and `reconcile` refuse (exit 2) another source, and a later `copy` does too. A target copied before this change has
+  no record: its next run records its source with a printed note rather than refusing, so the earlier test targets
+  keep working; a mismatch is refused once one is stored.
+- **`verify --no-pending`:** a pending item fails the run (exit 1). The window's `verify` uses it: after the freeze
+  nothing may be pending, so "green with pending" no longer passes as "go". The summary line gives the pending count.
+- **`wipe` refuses a target that shows use** (a user who signed in, or a sign-in other than the migrated surveyjs.io
+  one) unless `--even-if-used` is given, and a target whose settings name no database, so `--confirm ""` cannot match
+  it. After the cutover the target is production.
+- **`migrate-hosted` without the tool:** an image without `server/src/migrate` refuses the command (exit 2) whatever
+  `APP_EDITION` says, rather than failing on the missing module.

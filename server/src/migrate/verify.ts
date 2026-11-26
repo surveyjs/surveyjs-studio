@@ -63,7 +63,8 @@ import { collectNamed } from "./named.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
 import { deletedTableOf, responseTableOf } from "./source/tables.js";
-import { requireSameSample } from "./state.js";
+import type { SourceFingerprint } from "./source/fingerprint.js";
+import { guardSource, requireSameSample } from "./state.js";
 import type { CountedTable, MigrationTarget } from "./target.js";
 
 export interface VerifyOptions {
@@ -83,6 +84,11 @@ export interface VerifyOptions {
   report: Report;
   /** A line at the end of each phase, with its duration. */
   progress?: (line: string) => void;
+  /**
+   * The source the command line opened (names only): recorded at the first run, and a run on
+   * another source is refused (`guardSource`). Undefined: not checked (tests).
+   */
+  fingerprint?: SourceFingerprint;
 }
 
 /**
@@ -134,6 +140,7 @@ export async function runVerify(
   const concurrency = options.concurrency ?? CONCURRENCY;
   const phase = phaseTimer(report, options.progress ?? (() => undefined));
   await requireSameSample(state, sample);
+  await guardSource(state, options.fingerprint, new Date().toISOString(), options.progress);
   // The mappers note what they decide; the copy reported that, so a re-read notes it nowhere.
   const quiet = () => createReport();
   let ok = true;

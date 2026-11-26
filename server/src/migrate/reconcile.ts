@@ -36,7 +36,8 @@ import { markOf, takeMarks } from "./marks.js";
 import { collectNamed } from "./named.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
-import { requireCompleteCopy, requireSameSample } from "./state.js";
+import type { SourceFingerprint } from "./source/fingerprint.js";
+import { guardSource, requireCompleteCopy, requireSameSample } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
 export interface ReconcileOptions {
@@ -53,6 +54,11 @@ export interface ReconcileOptions {
   progress?: (line: string) => void;
   /** Tests only: the new marks' safety margin (default `MARKS_MARGIN_MS`). */
   marginMs?: number;
+  /**
+   * The source the command line opened (names only): recorded at the first run, and a run on
+   * another source is refused (`guardSource`). Undefined: not checked (tests).
+   */
+  fingerprint?: SourceFingerprint;
 }
 
 export const MAX_COUNT_RESPONSES = 50_000;
@@ -78,6 +84,7 @@ export async function runReconcile(
 
   await requireCompleteCopy(state);
   await requireSameSample(state, sample);
+  await guardSource(state, options.fingerprint, at(), progress);
   const marks = await storedMarks(target);
   const since = (await state.get<ReconcileState>(RECONCILE))?.since ?? marks;
   const next = await takeMarks(source, now, {

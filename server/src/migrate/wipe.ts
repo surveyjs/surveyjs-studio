@@ -3,7 +3,9 @@
  * the cutover): every table but `schema_migrations` in one transaction, children before parents,
  * and every byte the `files` table names in the file store. The bytes go first: a stop in between
  * leaves rows a second `wipe` finds. A table the list below does not know is an error before
- * anything is deleted, so a new migration cannot leave rows behind unnoticed.
+ * anything is deleted, so a new migration cannot leave rows behind unnoticed. A target that shows
+ * use (somebody signed in, or a sign-in other than the one the migration wrote) is refused unless
+ * `evenIfUsed`: after the cutover the target is production.
  */
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -59,6 +61,23 @@ export interface WipeResult {
   strayFiles: number | null;
 }
 
+/**
+ * How the target shows use: users who signed in, and sign-ins other than the `surveyjs` one the
+ * migration writes for each person (subject = the user's id).
+ */
+async function targetUse(
+  database: SqlDatabase,
+): Promise<{ signedIn: number; otherIdentities: number }> {
+  const { rows } = await sql<{ signed_in: number | string; other: number | string }>`
+    select
+      (select count(*) from users where last_sign_in_at is not null) as signed_in,
+      (select count(*) from user_identities i
+        where not (i.provider = 'surveyjs' and i.subject = cast(i.user_id as text))) as other
+  `.execute(database.db);
+  const row = rows[0]!;
+  return { signedIn: Number(row.signed_in), otherIdentities: Number(row.other) };
+}
+
 async function tableNames(database: SqlDatabase): Promise<string[]> {
   if (database.dialect === "sqlite") {
     const { rows } = await sql<{ name: string }>`
@@ -95,7 +114,7 @@ async function localKeys(root: string): Promise<string[]> {
 export async function wipeTarget(
   database: SqlDatabase,
   bytes: ByteStore,
-  options: { localRoot: string | null },
+  options: { localRoot: string | null; evenIfUsed?: boolean },
 ): Promise<WipeResult> {
   const known = new Set<string>([...TABLES, "schema_migrations"]);
   const present = new Set(await tableNames(database));
@@ -110,6 +129,17 @@ export async function wipeTarget(
     throw new WipeRefused(
       `the target lacks the table ${missing.join(", ")} (an older schema?); nothing was deleted`,
     );
+  }
+
+  if (options.evenIfUsed !== true) {
+    const use = await targetUse(database);
+    if (use.signedIn > 0 || use.otherIdentities > 0) {
+      throw new WipeRefused(
+        `the target shows use (${use.signedIn} users signed in, ${use.otherIdentities} sign-ins ` +
+          "other than the migrated one): it may be production. Pass --even-if-used to wipe it " +
+          "anyway; nothing was deleted",
+      );
+    }
   }
 
   const { db } = database;

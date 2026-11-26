@@ -29,7 +29,8 @@ import type {
 } from "./records.js";
 import { sampleMismatch, storedSampleOf, type SampleSet, type StoredSample } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
-import { COPY_COMPLETE, Refused, SAMPLE, type MigrationState } from "./state.js";
+import type { SourceFingerprint } from "./source/fingerprint.js";
+import { COPY_COMPLETE, guardSource, Refused, SAMPLE, type MigrationState } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
 export interface CopyOptions {
@@ -52,6 +53,11 @@ export interface CopyOptions {
   progress?: (line: string) => void;
   /** Tests only: the high-water marks' safety margin (default `MARKS_MARGIN_MS`). */
   marginMs?: number;
+  /**
+   * The source the command line opened (names only): recorded at the first run, and a run on
+   * another source is refused (`guardSource`). Undefined: not checked (tests).
+   */
+  fingerprint?: SourceFingerprint;
 }
 
 /** State key `run`: the first copy's start, the creation time of the people and keys it copies. */
@@ -548,10 +554,11 @@ export function createSurveyCopier(
 async function requireCopyFits(
   state: MigrationState,
   sample: SampleSet | undefined,
-): Promise<void> {
-  if (!(await state.keys(SAMPLE)).includes(SAMPLE)) return;
+): Promise<boolean> {
+  if (!(await state.keys(SAMPLE)).includes(SAMPLE)) return false;
   const why = sampleMismatch(await state.get<StoredSample>(SAMPLE), sample);
   if (why !== null) throw new Refused(`${why}, or wipe the target to copy something else`);
+  return true;
 }
 
 export async function runCopy(
@@ -566,7 +573,9 @@ export async function runCopy(
   const progress = options.progress ?? (() => undefined);
   const phase = phaseTimer(report, progress);
   const { state } = target;
-  await requireCopyFits(state, sample);
+  const held = await requireCopyFits(state, sample);
+  // Another source's copy is refused too; a new copy records its source with its sample.
+  await guardSource(state, options.fingerprint, at(), held ? progress : undefined);
   // What this copy covers, for the commands after it (the sample, or null for everything): the
   // first write, so a run stopped anywhere leaves a target only the same sample may copy into.
   await state.set(SAMPLE, storedSampleOf(sample), at());

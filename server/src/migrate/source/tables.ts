@@ -55,6 +55,8 @@ export interface TableSource {
 }
 
 const PAGE_SIZE = 500;
+/** The surveys account's event table: every source holds it (`probeLegacySource` checks). */
+export const EVENTS_TABLE = "surveys";
 /** A table no survey has (the zero post id): asked only for the service's `Date` header. */
 const CLOCK_TABLE = "post00000000000000000000000000000000";
 const EPOCH = new Date(0);
@@ -91,7 +93,7 @@ const stringOf = (value: unknown): string | undefined => {
   return typeof found === "string" ? found : undefined;
 };
 
-function tableClient(connectionString: string, name: string): TableClient {
+export function tableClient(connectionString: string, name: string): TableClient {
   try {
     return TableClient.fromConnectionString(connectionString, name, {
       allowInsecureConnection: isLocalStorageString(connectionString),
@@ -117,11 +119,18 @@ export function openTableSource(config: {
   surveysStorageConnectionString: string;
   resultsStorageConnectionString: string;
 }): TableSource {
-  /** Every entity of the table, page by page; a missing table is empty. */
+  /**
+   * Every entity of the table, page by page. A missing table is empty only when the table is
+   * made on first use (`madeOnFirstUse`): a survey's response, deletion-copy and completion
+   * tables (the old service creates each on the survey's first response, first deletion and
+   * first completion marker) and the app's own token table (created on the first token write).
+   * Any other table answering 404 (the event table every source holds) is an error.
+   */
   async function* entitiesOf(
     operation: string,
     table: TableClient,
     since?: Date,
+    madeOnFirstUse = false,
   ): AsyncGenerator<Entity> {
     const pages = table
       .listEntities<Record<string, unknown>>({
@@ -131,7 +140,7 @@ export function openTableSource(config: {
     try {
       for await (const page of pages) yield* page;
     } catch (error) {
-      if (statusOf(error) === 404) return;
+      if (statusOf(error) === 404 && madeOnFirstUse) return;
       throw new LegacyStoreError(operation, error);
     }
   }
@@ -169,13 +178,13 @@ export function openTableSource(config: {
     },
     async *responses(postId, since) {
       const table = results(responseTableOf(postId));
-      for await (const row of entitiesOf("response read", table, since)) {
+      for await (const row of entitiesOf("response read", table, since, true)) {
         yield { ...resultRow(row, row.rowKey ?? ""), timestamp: dateOf(row.timestamp) ?? EPOCH };
       }
     },
     async *markers(surveyId, since) {
       const table = results(`SurveyCompletion${dashless(surveyId)}`);
-      for await (const row of entitiesOf("marker read", table, since)) {
+      for await (const row of entitiesOf("marker read", table, since, true)) {
         yield {
           clientId: row.rowKey ?? "",
           ispartialcompleted: row.ispartialcompleted,
@@ -185,7 +194,7 @@ export function openTableSource(config: {
     },
     async *deletedCopies(postId, since) {
       const table = results(deletedTableOf(postId));
-      for await (const row of entitiesOf("deleted response read", table, since)) {
+      for await (const row of entitiesOf("deleted response read", table, since, true)) {
         // The copy's `instanceid` is the deleted row's key; its time is the deletion time.
         const responseId = stringOf(row.instanceid) ?? "";
         const entity = resultRow(row, responseId);
@@ -193,7 +202,7 @@ export function openTableSource(config: {
       }
     },
     async *events(since) {
-      const table = tableClient(config.surveysStorageConnectionString, "surveys");
+      const table = tableClient(config.surveysStorageConnectionString, EVENTS_TABLE);
       for await (const row of entitiesOf("event read", table, since)) {
         const idProperty = stringOf(row.id);
         yield {
@@ -229,7 +238,7 @@ export function openTableSource(config: {
     },
     async *ownTokenRows() {
       const table = tableClient(config.surveysStorageConnectionString, API_TOKENS_TABLE);
-      for await (const row of entitiesOf("token row read", table)) {
+      for await (const row of entitiesOf("token row read", table, undefined, true)) {
         yield { partition: row.partitionKey ?? "" };
       }
     },

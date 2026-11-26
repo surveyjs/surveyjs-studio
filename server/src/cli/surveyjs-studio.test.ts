@@ -82,6 +82,23 @@ describe("surveyjs-studio command", () => {
     }
   });
 
+  it("refuses migrate-hosted, exit 2, in an image without the tool, whatever APP_EDITION says", async () => {
+    const gone = () =>
+      Promise.reject(
+        Object.assign(new Error("Cannot find module '../migrate/cli.js'"), {
+          code: "ERR_MODULE_NOT_FOUND",
+        }),
+      );
+    for (const env of [{ APP_EDITION: "hosted" }, {}]) {
+      const result = capture();
+      expect(
+        await run(["migrate-hosted", "plan"], result.io, { env, loadMigrateHosted: gone }),
+      ).toBe(2);
+      expect(result.err).toContain("migrate-hosted is part of the hosted edition only");
+      expect(result.err).not.toContain("Cannot find module");
+    }
+  });
+
   it("passes migrate-hosted on: its --help prints its own usage", async () => {
     const result = capture();
     expect(await run(["migrate-hosted", "--help"], result.io, { env: {} })).toBe(0);

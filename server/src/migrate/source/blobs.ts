@@ -69,6 +69,27 @@ const PERMISSIONS_CONTAINER = "surveyresultpermissions";
 const VIEWS_CONTAINER = "my-surveys-views";
 const FILES_CONTAINER = "my-surveys-files";
 
+/**
+ * The containers a source may lack, whose listing then is empty: the app's own two (created by
+ * the app on its first file upload and its first saved view), and the published snapshots (the
+ * old service no longer writes them, so a store that never had one lacks the container). Any
+ * other container answering 404 is an error: every source holds it (`probeLegacySource` checks),
+ * so a 404 means the wrong account, and an empty listing would make `reconcile` remove the copy.
+ */
+const MADE_ON_FIRST_USE: ReadonlySet<string> = new Set([
+  FILES_CONTAINER,
+  VIEWS_CONTAINER,
+  PUBLISHED_CONTAINER,
+]);
+
+/** The containers every source holds (see `MADE_ON_FIRST_USE`), as `probeLegacySource` checks. */
+export const CONTAINERS_EVERY_SOURCE_HOLDS: readonly string[] = [
+  "surveyjson",
+  HISTORY_CONTAINER,
+  PERMISSIONS_CONTAINER,
+  ...Object.values(LAYOUT_CONTAINERS_BY_KIND),
+];
+
 export function openBlobSource(connectionString: string): BlobSource {
   let service: BlobServiceClient;
   try {
@@ -144,7 +165,10 @@ export function openBlobSource(connectionString: string): BlobSource {
     }
   }
 
-  /** Every blob of a container with the given options; a missing container is empty. */
+  /**
+   * Every blob of a container with the given options. A missing container is empty only when the
+   * source may lack it (`MADE_ON_FIRST_USE`); any other is an error.
+   */
   async function* blobsOf(operation: string, from: string, prefix?: string) {
     try {
       yield* container(from).listBlobsFlat({
@@ -152,7 +176,7 @@ export function openBlobSource(connectionString: string): BlobSource {
         ...(prefix !== undefined && { prefix }),
       });
     } catch (error) {
-      if (statusOf(error) === 404) return;
+      if (statusOf(error) === 404 && MADE_ON_FIRST_USE.has(from)) return;
       throw new LegacyStoreError(operation, error);
     }
   }
