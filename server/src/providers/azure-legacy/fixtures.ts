@@ -9,9 +9,9 @@ import { LARGE_SURVEY_TABLE, largeSurveyTable } from "./large-survey.js";
 import {
   LAYOUT_CONTAINERS_BY_KIND,
   membershipFromLegacy,
-  privateQuestionsFromLegacy,
   projectFromLegacy,
   responseFromLegacy,
+  resultsPrivacyFromLegacy,
   surveyFromLegacy,
   userFromLegacy,
 } from "./mapping.js";
@@ -331,7 +331,11 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     if (blob.account !== "surveys" || kind === undefined || !surveyRows.has(surveyId)) continue;
     (layouts[surveyId] ??= {})[kind] = blob.content.toString("utf8");
   }
+  // The private questions as the legacy provider reads them (`getResultsPrivacy`): the old public
+  // results' rule on the permissions and the old results column layout (ADR 0016, changed
+  // 2026-11-26), so every provider seeded from the fixtures hides what the old service hid.
   const privateResultQuestions: NonNullable<MemorySeed["privateResultQuestions"]> = {};
+  const permissionTexts: Record<string, string> = {};
   for (const blob of fixtures.blobs) {
     const surveyId = blob.name.toLowerCase();
     if (
@@ -341,8 +345,22 @@ export async function legacyFixtureSeed(dir?: string): Promise<MemorySeed> {
     ) {
       continue;
     }
-    const names = privateQuestionsFromLegacy(blob.content.toString("utf8"));
-    if (names !== null) privateResultQuestions[surveyId] = names;
+    permissionTexts[surveyId] = blob.content.toString("utf8");
+  }
+  for (const surveyId of new Set([
+    ...Object.keys(permissionTexts),
+    ...Object.keys(layouts).filter((id) => layouts[id]?.columns !== undefined),
+  ])) {
+    const layout = layouts[surveyId]?.columns ?? null;
+    const privacy = resultsPrivacyFromLegacy(
+      permissionTexts[surveyId] ?? null,
+      layout,
+      layout === null ? {} : (definitions[surveyId] ?? {}),
+    );
+    if (privacy.unreadable.length > 0) {
+      throw new Error(`fixture survey ${surveyId}: unreadable ${privacy.unreadable.join(", ")}`);
+    }
+    privateResultQuestions[surveyId] = privacy.privateQuestions;
   }
   const dashless = (id: string): string => id.toLowerCase().replaceAll("-", "");
   const responses: NonNullable<MemorySeed["responses"]> = {};

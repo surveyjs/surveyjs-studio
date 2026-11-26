@@ -249,9 +249,11 @@ files finds a `difference` note on each case that records one ([Testing](../test
   `HappendAt` and `InstanceId` are hidden only when the survey's `privateResultQuestions` names them (the old API also
   dropped them when a column layout existed and did not list them).
 - **`getSurveyPublicResults` and a saved column layout.** The old API also left out the answers of columns its saved
-  results layout marked non-public or hidden. Studio has no such layout: the bridge returns every answer except those of
-  the survey's private questions (`privateResultQuestions`), so a column the old layout hid shows. The migration tool
-  (hosted Step 9) maps those hidden columns into `privateResultQuestions`.
+  results layout marked non-public or hidden. The bridge returns every answer except those of the survey's private
+  questions (`privateResultQuestions`). Studio on the old stores reads that list by the old public results' rule, the
+  layout included, and leaves out every key the rule does not make public, so the old layout still hides its columns
+  there (changed 2026-11-26, [ADR 0016](../adr/0016-results-details-exports-and-public-results.md#changed-2026-11-26-public-results-on-the-old-stores));
+  the migration tool (hosted Step 9) maps those hidden columns into `privateResultQuestions`.
 - **A respondent of a "Limit to one response" survey** who completed and posts again through `post` is stored, with no
   `409`, and the completion marker follows the post. Posts by post ID ignore the publish state and the one-response
   setting, as the old API never refused a post.

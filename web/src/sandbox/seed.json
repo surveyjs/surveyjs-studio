@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "users": [
     {
       "id": "11111111-0000-4000-8000-a00000000001",
@@ -477,7 +477,9 @@
   },
   "privateResultQuestions": {
     "22222222-0000-4000-8000-a00000000001": [
-      "receipt"
+      "receipt",
+      "HappendAt",
+      "InstanceId"
     ]
   }
 }

@@ -25,6 +25,13 @@ export const sandbox = inject("sandbox");
  */
 export const hosted = inject("edition") === "hosted";
 
+/**
+ * The fixture survey `…a01`'s private questions, on every provider: the old public results' rule on
+ * its permissions and old results column layout (ADR 0016, changed 2026-11-26), which lists only the
+ * questions, so the submit time (`HappendAt`) and `InstanceId` join `receipt`.
+ */
+export const feedbackPrivateQuestions: readonly string[] = ["receipt", "HappendAt", "InstanceId"];
+
 /** The operations only the hosted edition routes (server/src/app.ts `HOSTED_OPERATIONS`). */
 export const HOSTED_OPERATIONS: readonly string[] = [
   "getPublicDefinition",

@@ -606,5 +606,9 @@ export const legacyFeedbackTableView: ViewState = {
   pageSize: 10,
 };
 
-/** The private questions of fixture 01 (legacy blob `surveyresultpermissions`). */
-export const feedbackPrivateQuestions: readonly string[] = ["receipt"];
+/**
+ * The private questions of fixture 01: the old public results' rule on its legacy blobs
+ * `surveyresultpermissions` and `surveyresultcolumns` (ADR 0016, changed 2026-11-26). The layout
+ * lists only the questions, so the submit time and the instance id join `receipt`.
+ */
+export const feedbackPrivateQuestions: readonly string[] = ["receipt", "HappendAt", "InstanceId"];

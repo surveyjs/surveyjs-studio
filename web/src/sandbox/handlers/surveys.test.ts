@@ -167,7 +167,7 @@ describe("GET /surveys/{id}", () => {
   it("answers the record with the private-question list", async () => {
     const { call } = setupSandbox();
     const survey = await (await call(`/surveys/${SURVEYS.feedback}`, { user: USERS.owner })).json();
-    expect(survey.settings.privateResultQuestions).toEqual(["receipt"]);
+    expect(survey.settings.privateResultQuestions).toEqual(["receipt", "HappendAt", "InstanceId"]);
     expect(survey.permissions.canModify).toBe(true);
   });
 

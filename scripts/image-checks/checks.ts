@@ -15,6 +15,7 @@ export const CHECK_NAMES = [
   "upgrade",
   "secrets",
   "compose",
+  "hosted-only",
   "notices",
 ] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
@@ -673,6 +674,58 @@ const notices: Check = async (run, { image }) => {
   return PASS;
 };
 
+/** The hosted edition's migration tool is not in the self-hosted image, and its command refuses. */
+const hostedOnly: Check = async (run, { image }) => {
+  const listed = await docker([
+    "run",
+    "--rm",
+    "--name",
+    run.name("hosted-only", "ls"),
+    "--entrypoint",
+    "sh",
+    image,
+    "-c",
+    "ls -d /app/server/src/migrate 2>/dev/null || true",
+  ]);
+  if (listed.code !== 0) failed("ls /app/server/src/migrate", listed);
+  if (listed.stdout.trim() !== "") fail("the self-hosted image holds /app/server/src/migrate");
+  const refused = await docker([
+    "run",
+    "--rm",
+    "--name",
+    run.name("hosted-only", "migrate-hosted"),
+    "--entrypoint",
+    "surveyjs-studio",
+    image,
+    "migrate-hosted",
+    "--help",
+  ]);
+  if (refused.code !== 2 || !refused.stderr.includes("part of the hosted edition only")) {
+    failed("surveyjs-studio migrate-hosted --help (expected a refusal, exit 2)", refused);
+  }
+  // Started as the hosted edition, the image still has no tool: the same refusal, not a crash.
+  const asHosted = await docker([
+    "run",
+    "--rm",
+    "--name",
+    run.name("hosted-only", "migrate-hosted-edition"),
+    "-e",
+    "APP_EDITION=hosted",
+    "--entrypoint",
+    "surveyjs-studio",
+    image,
+    "migrate-hosted",
+    "--help",
+  ]);
+  if (asHosted.code !== 2 || !asHosted.stderr.includes("part of the hosted edition only")) {
+    failed(
+      "APP_EDITION=hosted surveyjs-studio migrate-hosted --help (expected a refusal, exit 2)",
+      asHosted,
+    );
+  }
+  return PASS;
+};
+
 export const CHECKS: Readonly<Record<CheckName, Check>> = {
   "non-root": nonRoot,
   setup,
@@ -681,5 +734,6 @@ export const CHECKS: Readonly<Record<CheckName, Check>> = {
   upgrade,
   secrets,
   compose,
+  "hosted-only": hostedOnly,
   notices,
 };

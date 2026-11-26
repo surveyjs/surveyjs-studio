@@ -1,7 +1,7 @@
 # ADR 0037: Access keys and API tokens
 
 Status: Accepted (hosted Step 3, 2026-11-18); [changed 2026-11-25](#changed-2026-11-25-legacy-keys-on-the-sql-providers)
-(legacy keys on the SQL providers, hosted Step 8). Changes spec-hosted's rule "no new keys are issued"
+(legacy keys on the SQL providers, hosted Step 8; [what the migration copies](#changed-2026-11-25-what-the-migration-copies), hosted Step 9). Changes spec-hosted's rule "no new keys are issued"
 ([spec-hosted.md](../../spec-hosted.md) › Compatibility layer, Access keys) and fills in › API tokens and CORS.
 
 ## Context
@@ -124,3 +124,12 @@ with an old key would fail.
   and last four stored; the user's unrevoked rows, the presented one included, revoked), and the bridge's `generateAccessKey` calls Studio for it instead of forwarding to the old service. The Azure
   legacy provider keeps answering `409 legacy-key-replace-unavailable` ([ADR 0040](0040-bridge-access-key-actions.md)),
   as today's server needs.
+
+## Changed 2026-11-25: what the migration copies
+
+Point 4 said the migration copies every key "with any revocation made in Studio". Hosted Step 9 does not: it copies the
+site's keys, hashed, with their last four characters and the run's start as `created_at`, all unrevoked
+([ADR 0044](0044-the-hosted-migration-tool.md)). Revocations made in Studio before the cutover are not copied, and neither
+are API tokens: Revoke is switched on only after `api.surveyjs.io` moves, which is the same switch as the cutover
+([ADR 0042](0042-one-switch-to-the-new-server.md)), and no tokens exist on today's service. `verify` reports any it finds as a
+difference, so a surprise is not hidden. A blocked person's key is refused by `site_blocked`, not revoked.

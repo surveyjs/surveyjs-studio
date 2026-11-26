@@ -85,17 +85,22 @@ export function safeErrorText(error: unknown): string {
   return safe ? error.message : describeUnexpected(error);
 }
 
+/** The variables of an env file; null when it cannot be read or parsed. */
+export function readEnvFile(path: string): Record<string, string> | null {
+  try {
+    return parseEnv(readFileSync(path, "utf8")) as Record<string, string>;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * `env` with the variables of the file added; variables already in `env` win (as Node's
  * `--env-file`). null when the file cannot be read or parsed.
  */
 export function withEnvFile(env: CliEnv, path: string): Record<string, string | undefined> | null {
-  let parsed: Record<string, string>;
-  try {
-    parsed = parseEnv(readFileSync(path, "utf8")) as Record<string, string>;
-  } catch {
-    return null;
-  }
+  const parsed = readEnvFile(path);
+  if (parsed === null) return null;
   return {
     ...parsed,
     ...Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined)),

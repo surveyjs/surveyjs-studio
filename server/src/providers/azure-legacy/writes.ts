@@ -55,7 +55,6 @@ import {
   UPLOADS_PREFIX,
   fileRecordFromBlob,
   isGuid,
-  privateQuestionsToLegacy,
   userFromLegacy,
 } from "./mapping.js";
 
@@ -1369,16 +1368,17 @@ export async function writeResponseDeletion(
 
 /**
  * Replaces the survey's public-question list: append blob `surveyresultpermissions/{surveyId}`, as
- * the legacy writers do (layout section 10). No SQL change and no audit row.
+ * the legacy writers do (layout section 10), with `text` (`privateQuestionsToLegacy`). No SQL
+ * change and no audit row.
  */
 export async function writePrivateQuestions(
   blobs: BlobServiceClient,
   surveyId: string,
-  names: readonly string[],
+  text: string,
 ): Promise<void> {
   const id = checkedId("public questions save", surveyId);
   const container = PERMISSIONS_CONTAINER;
-  const content = Buffer.from(privateQuestionsToLegacy(names), "utf8");
+  const content = Buffer.from(text, "utf8");
   try {
     try {
       await replaceAppendBlob(blobs, container, id, content);

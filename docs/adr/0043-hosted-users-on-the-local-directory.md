@@ -1,6 +1,6 @@
 # ADR 0043: Hosted users on the local directory, from surveyjs.io sign-in
 
-Status: Accepted (hosted Step 2, 2026-11-24); [changed 2026-11-25](#changed-2026-11-25-hosted-refuses-password-sign-in). Changes [ADR 0022](0022-users-from-sign-in.md): the hosted directory is
+Status: Accepted (hosted Step 2, 2026-11-24); [changed 2026-11-25](#changed-2026-11-25-hosted-refuses-password-sign-in), [and again](#changed-2026-11-25-what-the-migration-seeds-and-reconcile-removes). Changes [ADR 0022](0022-users-from-sign-in.md): the hosted directory is
 the existing `local` one, extended, not a new `profiles` directory; licences come as a sign-in claim, not from a site
 endpoint. The rest of ADR 0022 stands (no user API, the account-deleted webhook, profiles seeded by the migration).
 
@@ -151,3 +151,14 @@ licence date; the stub's new claim.
 `APP_EDITION=hosted` with `password` in `AUTH_METHODS` is a start-up error (built in hosted Step 8). With passwords on,
 an instance admin's reset link removes a person's surveyjs.io sign-in, and the email branch of point 1 could then link
 another surveyjs.io id with that email. Until now only the private deployment's checks refused the combination.
+
+## Changed 2026-11-25: what the migration seeds and reconcile removes
+
+Point 6 is built by hosted Step 9 ([ADR 0044](0044-the-hosted-migration-tool.md)) with two differences from its wording.
+
+- **Who is seeded:** every person the copied data names: owners, creators, members, history authors, view owners and
+  access-key holders.
+- **What `reconcile` removes:** not every account of a person the source no longer names. It removes only a profile the
+  migration pre-created and nobody has used: role `user`, one `surveyjs` identity whose subject is the id, no password,
+  never signed in, no other identity. It never removes an admin. Any other account is kept and noted
+  (`person_kept_unseeded`).

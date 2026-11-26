@@ -195,8 +195,13 @@ describe("getPublicResults from and till", () => {
 
   it("keeps responses strictly between them, as instants, paging inside the range", async () => {
     const { call } = setupSandbox({}, "hosted");
-    const all = (await (await call(path)).json()) as { items: { submittedAt: string }[] };
-    const times = all.items.map((item) => item.submittedAt);
+    // The survey's private questions name HappendAt, so its public items carry no time: the
+    // completed responses' times come from the seed.
+    const times = (seed.responses[SURVEYS.feedback] ?? [])
+      .filter((response) => !response.partial)
+      .map((response) => response.submittedAt);
+    const all = (await (await call(path)).json()) as { items: unknown[] };
+    expect(all.items).toHaveLength(times.length);
     expect(times.length).toBeGreaterThanOrEqual(3);
     const [first, second] = times as [string, string];
     const query = async (q: string) =>
@@ -254,7 +259,7 @@ describe("getPublicLayout", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     const body = (await response.json()) as { text: string; privateQuestions: string[] };
     expect(Object.keys(body)).toEqual(["text", "privateQuestions"]);
-    expect(body.privateQuestions).toEqual(["receipt"]);
+    expect(body.privateQuestions).toEqual(["receipt", "HappendAt", "InstanceId"]);
     expect(JSON.parse(body.text)).toMatchObject({ pageSize: 10 });
   });
 

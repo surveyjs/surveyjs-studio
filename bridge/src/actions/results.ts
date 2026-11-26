@@ -114,7 +114,8 @@ export interface ResultPage {
   /** The survey's definition, its numbers with their text. */
   definition: unknown;
   privateQuestions: readonly string[];
-  items: { submittedAt: string; data: Record<string, unknown> }[];
+  /** `submittedAt` is absent when the private questions name `HappendAt`. */
+  items: { submittedAt?: string; data: Record<string, unknown> }[];
   nextCursor: string | null;
 }
 
@@ -146,7 +147,8 @@ function readPage(text: string): ResultPage {
  */
 function resultRow(item: ResultPage["items"][number], hidden: ReadonlySet<string>): string {
   const row: Record<string, unknown> = { ...item.data };
-  row.HappendAt = oldTime(item.submittedAt, true);
+  // Studio leaves the time out when the private questions name HappendAt; deleted below then.
+  row.HappendAt = item.submittedAt === undefined ? null : oldTime(item.submittedAt, true);
   row.InstanceId = null;
   for (const name of ["HappendAt", "InstanceId"]) if (hidden.has(name)) delete row[name];
   return oldJson(row);

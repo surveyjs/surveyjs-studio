@@ -34,9 +34,9 @@ export default tseslint.config(
   },
   {
     // The azure-legacy provider works on the live surveyjs.io stores: keep it read-only by
-    // construction (Step 2). Every write lives in writes.ts, the one file listed in `ignores`;
+    // construction (Step 2); the migration tool's source readers (hosted Step 9) too. Every write lives in writes.ts, the one file listed in `ignores`;
     // add a write there only together with the step that needs it.
-    files: ["server/src/providers/azure-legacy/**/*.ts"],
+    files: ["server/src/providers/azure-legacy/**/*.ts", "server/src/migrate/source/**/*.ts"],
     ignores: [
       "**/*.test.ts",
       // the only file allowed to write to the legacy stores; Step 4: survey creation; Step 5: update, clone and delete; Step 6: definition and theme saves; Step 7: editor files and clone rewriting; Step 8: result rows and completion markers; Step 9: results layouts (views) in a container of our own; Step 10: deleting all results and the public-question list; Step 11: projects and members (Organizations and OrganizationUsers rows, project deletion); Step 12: member erasure; Hosted Step 6: deleting one result, the shared results layouts and editor files of no survey

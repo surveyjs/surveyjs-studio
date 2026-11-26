@@ -1,3 +1,5 @@
+import { privateAnswers, type PrivateAnswers } from "@surveyjs-studio/column-layout";
+import { answerNamesOf, questionsOf } from "../../results/definition.js";
 import { isUploadLegacyName } from "../../domain/legacy-file.js";
 import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
@@ -23,6 +25,7 @@ import type {
   LegacyUserRow,
 } from "./rows.js";
 import { GUID } from "../../domain/guid.js";
+import type { ResultsPrivacy } from "../types.js";
 
 /**
  * Pure legacy -> domain mapping. Rules: docs/architecture/legacy-data-layout.md section 9.
@@ -348,15 +351,10 @@ export const LAYOUT_CONTAINERS_BY_KIND: Readonly<Record<LayoutKind, string>> = {
  * byte-order mark; null when the text is not a JSON array.
  */
 export function privateQuestionsFromLegacy(text: string): string[] | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(value)) return null;
+  const value = permissionsListFromLegacy(text);
+  if (value === null) return null;
   const names: string[] = [];
-  for (const element of value as unknown[]) {
+  for (const element of value) {
     if (typeof element !== "object" || element === null || Array.isArray(element)) continue;
     const { name, isPublic } = element as Record<string, unknown>;
     if (typeof name === "string" && name !== "" && isPublic === false && !names.includes(name)) {
@@ -366,7 +364,118 @@ export function privateQuestionsFromLegacy(text: string): string[] | null {
   return names;
 }
 
-/** The blob text for a list of private question names. */
-export function privateQuestionsToLegacy(names: readonly string[]): string {
-  return JSON.stringify(names.map((name) => ({ name, isPublic: false })));
+/** A legacy `surveyresultpermissions` text as a list (one BOM stripped); null when no JSON array. */
+export function permissionsListFromLegacy(text: string): unknown[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+  } catch {
+    return null;
+  }
+  return Array.isArray(value) ? (value as unknown[]) : null;
+}
+
+/** A setting of the old public results that can be unreadable. */
+export type PublicResultsSetting = "permissions" | "columns";
+
+/**
+ * The names a survey's public results hide, by the old public results' rule (`privateAnswers`),
+ * from the texts of its `surveyresultpermissions` and `surveyresultcolumns` blobs (null: no blob;
+ * a layout text that is empty or blank is none too; one BOM stripped from each) among
+ * `answerNames`. `unreadable` names each setting the old calculation failed on (a caller turns
+ * public results off for it); the names then follow the rule as if that setting were absent.
+ */
+export function privateAnswersFromLegacy(
+  permissionsText: string | null,
+  layoutText: string | null,
+  answerNames: Iterable<string>,
+): PrivateAnswers & { unreadable: PublicResultsSetting[] } {
+  const unreadable: PublicResultsSetting[] = [];
+  let permissions: unknown[] | undefined;
+  if (permissionsText !== null) {
+    const list = permissionsListFromLegacy(permissionsText);
+    if (list === null) unreadable.push("permissions");
+    else permissions = list;
+  }
+  let layout: unknown;
+  if (layoutText !== null && layoutText.trim() !== "") {
+    try {
+      layout = JSON.parse(layoutText.charCodeAt(0) === 0xfeff ? layoutText.slice(1) : layoutText);
+    } catch {
+      layout = null;
+    }
+  }
+  const names = [...answerNames];
+  let result = privateAnswers(permissions, layout, names);
+  if (result === null) {
+    unreadable.push("columns");
+    result = privateAnswers(permissions, undefined, names)!;
+  }
+  return { ...result, unreadable };
+}
+
+/**
+ * Studio's private questions on the old stores (`ViewStore.getResultsPrivacy`), by the old public
+ * results' rule (`privateAnswersFromLegacy`) on the permissions and column layout texts (as
+ * there), among the definition's question names and answer keys (`answerNamesOf`). `lockedQuestions`:
+ * with both settings, the definition's questions the layout does not list.
+ */
+export function resultsPrivacyFromLegacy(
+  permissionsText: string | null,
+  layoutText: string | null,
+  definition: SurveyDefinition,
+): ResultsPrivacy & { unreadable: PublicResultsSetting[] } {
+  const questions = questionsOf(definition).map(({ name }) => name);
+  const rule = privateAnswersFromLegacy(
+    permissionsText,
+    layoutText,
+    new Set([...questions, ...answerNamesOf(definition)]),
+  );
+  const listed = rule.listedUnderPermissions;
+  return {
+    privateQuestions: rule.privateNames,
+    publicOnly: rule.publicOnly,
+    lockedQuestions: listed === null ? [] : questions.filter((name) => !listed.has(name)),
+    unreadable: rule.unreadable,
+  };
+}
+
+/**
+ * The permissions blob text for a list of private names, in the old service's full form (what its
+ * Summary saved): each of `questionNames` (the definition's) with `isPublic` true or false, then
+ * the other names of the `stored` text (one BOM stripped; ignored when no JSON array), then the
+ * other private names. A stored name the definition does not have is public unless now private;
+ * with `keepStoredMarks` (the survey has an old results layout, where a name the list does not
+ * mark public is private) it keeps its stored mark instead: public only when stored exactly
+ * `isPublic: true` (and never `false`) and not now private, so a list that leaves a stored private
+ * name out (an old-API caller sends its private names only) never makes it public. With both old
+ * settings only a name marked public is public, so a list of private entries only would make
+ * every answer private.
+ */
+export function privateQuestionsToLegacy(
+  names: readonly string[],
+  questionNames: readonly string[] = [],
+  stored: string | null = null,
+  keepStoredMarks = false,
+): string {
+  const hidden = new Set(names);
+  const questions = new Set(questionNames);
+  const storedNames: string[] = [];
+  const storedPublic = new Set<string>();
+  const storedPrivate = new Set<string>();
+  for (const element of (stored === null ? null : permissionsListFromLegacy(stored)) ?? []) {
+    if (typeof element !== "object" || element === null || Array.isArray(element)) continue;
+    const { name, isPublic } = element as Record<string, unknown>;
+    if (typeof name !== "string" || name === "") continue;
+    storedNames.push(name);
+    if (isPublic === true) storedPublic.add(name);
+    else storedPrivate.add(name);
+  }
+  const isPublic = (name: string) =>
+    !hidden.has(name) &&
+    (questions.has(name) ||
+      !keepStoredMarks ||
+      (storedPublic.has(name) && !storedPrivate.has(name)));
+  const written = new Set([...questionNames, ...storedNames, ...names]);
+  return JSON.stringify([...written].map((name) => ({ name, isPublic: isPublic(name) })));
 }

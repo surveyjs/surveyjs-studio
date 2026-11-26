@@ -6,6 +6,7 @@ packages:
   - e2e
   - bridge
   - metrics
+  - column-layout
   - legacy-compat-tests
   - legacy-replay
 

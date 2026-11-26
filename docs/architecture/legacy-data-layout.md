@@ -575,6 +575,11 @@ per user:
   `isPublic` equal to the boolean `false` is a private question (first occurrence only, in array order). An
   element without `isPublic`, with `true`, with `"false"` or that is not an object is **public**, as in the old
   code. A missing blob means every question is public.
+- **Changed 2026-11-26** ([ADR 0016](../adr/0016-results-details-exports-and-public-results.md#changed-2026-11-26-public-results-on-the-old-stores)):
+  with the survey's old column layout the list is read by the old public results' rule on both
+  (`privateAnswers`), and it is written in the old service's full form, every question of the definition
+  with `isPublic` true or false. The bullet above holds for reads without a layout, the one below for writes before
+  that date.
 - **Written** as the old JSON, one element for each **private** question only:
   `[{ "name": "receipt", "isPublic": false }]`; no list is `[]`. The public entries an older blob held are not
   written again: for the old readers a question with no entry is public too. The blob is an append blob in the
@@ -583,7 +588,8 @@ per user:
   its own here; the old code put it into the `SURVEY_UPDATE` row of a layout save).
 - **The public overlay is not used.** The old code copied the list into the `isPublic` marks of the saved
   layouts; this application keeps the list as the setting and sets the marks in the user's own layout when the
-  Summary mounts. The old `surveyresultcolumns` blob stays unread.
+  Summary mounts. The old `surveyresultcolumns` blob is read, for the privacy rule above, and never written by
+  this setting.
 - The survey deletion already removed this blob (one of the four layout blobs). A clone does not copy it.
 
 **Deleting all results (Step 10).** The old code deletes the tables `post{postId}` and `SurveyCompletion{surveyId}`

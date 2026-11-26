@@ -1,6 +1,7 @@
 /** What the table and the charts read of a response (a `SurveyResponse` is one; so is a public item). */
 export interface ResultItem {
-  readonly submittedAt: string;
+  /** Absent on a public item when the private list names `HappendAt` (the submission time). */
+  readonly submittedAt?: string;
   readonly data: Record<string, unknown>;
   readonly respondentIp?: string;
   /** An open run of a client (ADR 0038); the public pages get none. */
@@ -11,14 +12,20 @@ export const SUBMITTED_COLUMN = "HappendAt";
 export const IP_COLUMN = "IPAddress";
 export const PARTIAL_COLUMN = "Partial";
 
-/** One table row per response: its answers plus the submission time and, when stored, the IP. */
+/**
+ * One table row per response: its answers plus the submission time and, when stored, the IP. An
+ * extra column in `hidden` (the public page's private names: the submit time) gets no cell.
+ */
 export function tableRows(
   responses: readonly ResultItem[],
   questionNames: ReadonlySet<string>,
+  hidden: ReadonlySet<string> = new Set(),
 ): Record<string, unknown>[] {
   return responses.map((response) => {
     const row: Record<string, unknown> = { ...response.data };
-    if (!questionNames.has(SUBMITTED_COLUMN)) row[SUBMITTED_COLUMN] = response.submittedAt;
+    if (!questionNames.has(SUBMITTED_COLUMN) && !hidden.has(SUBMITTED_COLUMN)) {
+      row[SUBMITTED_COLUMN] = response.submittedAt;
+    }
     if (response.respondentIp !== undefined && !questionNames.has(IP_COLUMN)) {
       row[IP_COLUMN] = response.respondentIp;
     }
@@ -28,13 +35,17 @@ export function tableRows(
   });
 }
 
-/** The columns after the answer columns; a question with the same name keeps its own column. */
+/**
+ * The columns after the answer columns; a question with the same name keeps its own column, and a
+ * column in `hidden` is left out (as in `tableRows`).
+ */
 export function extraTableColumns(
   responses: readonly ResultItem[],
   questionNames: ReadonlySet<string>,
+  hidden: ReadonlySet<string> = new Set(),
 ) {
   const columns: { name: string; displayName: string; isVisible: boolean }[] = [];
-  if (!questionNames.has(SUBMITTED_COLUMN)) {
+  if (!questionNames.has(SUBMITTED_COLUMN) && !hidden.has(SUBMITTED_COLUMN)) {
     columns.push({ name: SUBMITTED_COLUMN, displayName: "Submitted", isVisible: true });
   }
   if (

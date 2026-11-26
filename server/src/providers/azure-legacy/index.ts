@@ -873,7 +873,11 @@ export function createAzureLegacyProviders(
 
     results: createAzureResultStore({ targets: writeTargets, publishIdOf, mapRows, now }),
 
-    views: createAzureViewStore({ blobs: surveysAccount.blobs, logger }),
+    views: createAzureViewStore({
+      blobs: surveysAccount.blobs,
+      logger,
+      definitionOf: async (id) => (await getDefinition(id))?.content ?? null,
+    }),
     credentials,
 
     users: {

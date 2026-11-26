@@ -72,16 +72,20 @@ in the porting guide) and the legacy fixtures. `node --import tsx scripts/confor
 `CONFORMANCE_WEBHOOK_SECRET` to the server's webhook secret. CI runs this against the production image (the
 `conformance-base` job).
 
-| Variable                     | Meaning                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------ |
-| `CONFORMANCE_BASE_URL`       | The origin of the server to test                                                                 |
-| `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped                           |
-| `CONFORMANCE_PROVIDER`       | `memory` (default), `azure-legacy`, `sqlite`, `postgres` or `sandbox`; the reference server only |
-| `CONFORMANCE_FILE_STORE`     | `local` (default) or `s3`; the `sqlite` and `postgres` reference servers only                    |
-| `CONFORMANCE_AUTH`           | `default`, `password` or `oauth`; the reference server only                                      |
-| `CONFORMANCE_EDITION`        | `self-hosted` (default) or `hosted`; the `postgres` reference server only                        |
-| `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                                           |
-| `CONFORMANCE_IMAGE`          | An image tag to run as the reference server (Linux only)                                         |
+A base-URL run against a deployment still on the old stores also needs `CONFORMANCE_PROVIDER=azure-legacy`: the
+harness then expects the old stores' public-results rule, and without it three fixture cases fail. (With a base URL
+the variable only sets what the suite expects; it starts no server.)
+
+| Variable                     | Meaning                                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CONFORMANCE_BASE_URL`       | The origin of the server to test                                                                                                                     |
+| `CONFORMANCE_WEBHOOK_SECRET` | Its `ACCOUNT_WEBHOOK_SECRET`; without it the webhook tests are skipped                                                                               |
+| `CONFORMANCE_PROVIDER`       | `memory` (default), `azure-legacy`, `sqlite`, `postgres` or `sandbox`; the reference server, and `azure-legacy` for a base-URL run on the old stores |
+| `CONFORMANCE_FILE_STORE`     | `local` (default) or `s3`; the `sqlite` and `postgres` reference servers only                                                                        |
+| `CONFORMANCE_AUTH`           | `default`, `password` or `oauth`; the reference server only                                                                                          |
+| `CONFORMANCE_EDITION`        | `self-hosted` (default) or `hosted`; the `postgres` reference server only                                                                            |
+| `CONFORMANCE_READ_ONLY`      | `true` or `false` (default); the reference server only                                                                                               |
+| `CONFORMANCE_IMAGE`          | An image tag to run as the reference server (Linux only)                                                                                             |
 
 ## Signing in
 

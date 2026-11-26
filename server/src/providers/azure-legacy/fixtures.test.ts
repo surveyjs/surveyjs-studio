@@ -340,10 +340,12 @@ describe("legacyFixtureSeed layouts", () => {
 });
 
 describe("legacyFixtureSeed private questions", () => {
-  it("holds the private list of the first survey, by survey id", async () => {
+  it("holds the first survey's private list by the old public results' rule, by survey id", async () => {
+    // Its permissions and old results column layout both exist, so the submit time and the
+    // instance id, which the layout does not list, are private too (ADR 0016, changed 2026-11-26).
     const seed = await legacyFixtureSeed();
     expect(seed.privateResultQuestions).toEqual({
-      "22222222-0000-4000-8000-a00000000001": ["receipt"],
+      "22222222-0000-4000-8000-a00000000001": ["receipt", "HappendAt", "InstanceId"],
     });
   });
 });

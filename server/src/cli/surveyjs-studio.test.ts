@@ -56,9 +56,55 @@ describe("surveyjs-studio command", () => {
       "s3-bucket",
       "rebase-urls",
       "purge-deleted-responses",
+      "migrate-hosted",
     ]) {
       expect(result.out).toContain(`  ${command}`);
     }
+  });
+
+  it("does not list migrate-hosted in the self-hosted edition's usage", async () => {
+    const result = capture();
+    expect(await run(["--help"], result.io, { env: { APP_EDITION: "self-hosted" } })).toBe(0);
+    expect(result.out).toContain("  purge-deleted-responses");
+    expect(result.out).not.toContain("migrate-hosted");
+  });
+
+  it("refuses migrate-hosted in the self-hosted edition, even its --help", async () => {
+    for (const argv of [
+      ["migrate-hosted", "--help"],
+      ["migrate-hosted", "plan"],
+    ]) {
+      const result = capture();
+      expect(await run(argv, result.io, { env: { APP_EDITION: "self-hosted" } })).toBe(2);
+      expect(result.out).toBe("");
+      expect(result.err).toContain("migrate-hosted is part of the hosted edition only");
+      expect(result.err).not.toContain("Usage: surveyjs-studio migrate-hosted");
+    }
+  });
+
+  it("refuses migrate-hosted, exit 2, in an image without the tool, whatever APP_EDITION says", async () => {
+    const gone = () =>
+      Promise.reject(
+        Object.assign(new Error("Cannot find module '../migrate/cli.js'"), {
+          code: "ERR_MODULE_NOT_FOUND",
+        }),
+      );
+    for (const env of [{ APP_EDITION: "hosted" }, {}]) {
+      const result = capture();
+      expect(
+        await run(["migrate-hosted", "plan"], result.io, { env, loadMigrateHosted: gone }),
+      ).toBe(2);
+      expect(result.err).toContain("migrate-hosted is part of the hosted edition only");
+      expect(result.err).not.toContain("Cannot find module");
+    }
+  });
+
+  it("passes migrate-hosted on: its --help prints its own usage", async () => {
+    const result = capture();
+    expect(await run(["migrate-hosted", "--help"], result.io, { env: {} })).toBe(0);
+    expect(result.out).toContain("Usage: surveyjs-studio migrate-hosted <command>");
+    const unknown = capture();
+    expect(await run(["migrate-hosted", "frobnicate"], unknown.io, { env: {} })).toBe(2);
   });
 
   it("passes s3-bucket on with the rest of its arguments", async () => {

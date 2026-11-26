@@ -65,10 +65,13 @@ export function TableView({
       publicView ? withoutQuestions(definition, privateAtMount.current) : definition,
     );
     const names = new Set(survey.getAllQuestions().map((question) => question.name));
-    const extras = extraTableColumns(responses, names);
+    // The public Table leaves out a private extra column too: the submit time when the list names
+    // `HappendAt` (the old public results' rule on the old stores).
+    const hidden = new Set(publicView ? privateAtMount.current : []);
+    const extras = extraTableColumns(responses, names, hidden);
     const table = new Tabulator(
       survey,
-      tableRows(responses, names),
+      tableRows(responses, names, hidden),
       // The public Table offers the downloads too: it holds no private question and no address,
       // so a file has nothing the page does not show.
       { downloadButtons: ["pdf", "xlsx", "csv"] },

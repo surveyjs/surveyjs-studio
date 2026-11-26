@@ -1,5 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  type RunnerTestCase,
+} from "vitest";
 import { createEraseAccount, previewErasure } from "../../accounts/erasure.js";
 import { hashCredential } from "../../credentials/format.js";
 import { newFileId, surveyIdOfFile } from "../../domain/file-id.js";
@@ -150,6 +159,23 @@ export interface ProviderSuiteOptions {
   readonly sections?: readonly ProviderSuiteSection[];
   /** The provider's user directory kind; default `external`. */
   readonly userDirectoryKind?: UserDirectoryKind;
+  /**
+   * Cases skipped for this provider, by `{describe title} > {case title}` (the titles below the
+   * suite's own), each with the reason. Only for a provider whose data differs from the fixtures
+   * on purpose (the migration tool's documented decisions); the caller asserts each difference
+   * itself. A name that matches no case fails a full run of the suite, so the list cannot go
+   * stale.
+   */
+  readonly except?: Readonly<Record<string, string>>;
+}
+
+/** A case's title below the describe named `top`: `{describe} > … > {case}`. */
+function caseTitle(test: RunnerTestCase, top: string): string {
+  const names: string[] = [test.name];
+  for (let suite = test.suite; suite && suite.name !== top; suite = suite.suite) {
+    names.unshift(suite.name);
+  }
+  return names.join(" > ");
 }
 
 /**
@@ -165,13 +191,25 @@ export function describeProviderSuite(
     options.sections === undefined || options.sections.includes(section);
   const describeIn = (section: ProviderSuiteSection) =>
     included(section) ? describe : describe.skip;
-  describe(`provider suite: ${name}`, () => {
+  const top = `provider suite: ${name}`;
+  describe(top, () => {
     let providers: ProviderSet;
+    const except = options.except ?? {};
+    const matched = new Set<string>();
+    beforeEach((context) => {
+      const title = caseTitle(context.task, top);
+      if (title in except) {
+        matched.add(title);
+        context.skip(except[title]);
+      }
+    });
     beforeAll(async () => {
       providers = await create();
     });
     afterAll(async () => {
       await providers.close();
+      const stale = Object.keys(except).filter((title) => !matched.has(title));
+      expect(stale, "except entries that match no case").toEqual([]);
     });
 
     describeIn("surveys")("surveys.getSurvey", () => {

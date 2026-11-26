@@ -713,6 +713,35 @@ describe("the Summary's private questions", () => {
     );
   });
 
+  describe("questions the old results layout keeps private", () => {
+    const locked: Survey = {
+      ...sampleSurvey,
+      settings: {
+        ...sampleSurvey.settings,
+        privateResultQuestions: ["q2", "q3"],
+        lockedPrivateResultQuestions: ["q2", "q3"],
+      },
+    };
+    const HINT =
+      "The survey's old results layout keeps q2, q3 private: they cannot be made public.";
+
+    it("shows them as private, with a short hint next to the toggle", async () => {
+      server.use(...pageHandlers({ survey: locked }));
+      renderApp(path);
+
+      expect((await screen.findByTestId("fake-summary-private")).textContent).toBe('["q2","q3"]');
+      expect(screen.getByText(HINT)).toBeTruthy();
+    });
+
+    it("gives no hint where there is no toggle", async () => {
+      server.use(...pageHandlers({ survey: { ...locked, permissions: { canModify: false } } }));
+      renderApp(path);
+
+      await screen.findByTestId("fake-summary");
+      expect(screen.queryByText(HINT)).toBeNull();
+    });
+  });
+
   it("gives the Table no toggle", async () => {
     server.use(...pageHandlers());
 

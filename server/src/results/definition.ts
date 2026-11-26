@@ -61,6 +61,18 @@ export function questionsOf(definition: SurveyDefinition): DefinitionQuestion[] 
 }
 
 /**
+ * The answer names a definition can produce in a response: each question's data key (its
+ * `valueName`, else its name) and, for a question with a comment area, the key with the comment
+ * suffix. The migration's copy adds the keys of the responses it reads.
+ */
+export function answerNamesOf(definition: SurveyDefinition): string[] {
+  const suffix = commentSuffixOf(definition);
+  return questionsOf(definition).flatMap(({ key, hasComment }) =>
+    hasComment ? [key, key + suffix] : [key],
+  );
+}
+
+/**
  * The data keys public results leave out for these private questions (R1): each name and, when the
  * definition gives the question a `valueName`, that key too, each without and with a comment suffix.
  * Every suffix counts (the current one, the library's `-Comment` and a set `commentPrefix`): older
@@ -85,11 +97,17 @@ export function privateKeysOf(
   return keys;
 }
 
-/** A copy of `data` without `keys` (the same object when there is nothing to remove). */
+/**
+ * A copy of `data` without `keys` and, when `only` is given, without any key not in it (the same
+ * object when there is nothing to remove).
+ */
 export function withoutKeys(
   data: Record<string, unknown>,
   keys: ReadonlySet<string>,
+  only: ReadonlySet<string> | null = null,
 ): Record<string, unknown> {
-  if (keys.size === 0) return data;
-  return Object.fromEntries(Object.entries(data).filter(([key]) => !keys.has(key)));
+  if (keys.size === 0 && only === null) return data;
+  return Object.fromEntries(
+    Object.entries(data).filter(([key]) => !keys.has(key) && (only === null || only.has(key))),
+  );
 }

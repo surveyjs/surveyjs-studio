@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SurveyDefinition } from "../domain/types.js";
-import { commentSuffixOf, privateKeysOf, questionsOf, withoutKeys } from "./definition.js";
+import {
+  answerNamesOf,
+  commentSuffixOf,
+  privateKeysOf,
+  questionsOf,
+  withoutKeys,
+} from "./definition.js";
 
 const definition: SurveyDefinition = {
   pages: [
@@ -95,5 +101,30 @@ describe("withoutKeys", () => {
   it("returns the same object when there is nothing to remove", () => {
     const data = { a: 1 };
     expect(withoutKeys(data, new Set())).toBe(data);
+  });
+});
+
+describe("answerNamesOf", () => {
+  it("lists each question's key, and the comment name for a question with a comment area", () => {
+    const definition = {
+      commentSuffix: "_c",
+      pages: [
+        {
+          elements: [
+            { type: "text", name: "a" },
+            {
+              type: "panel",
+              elements: [{ type: "comment", name: "b", valueName: "bv", hasComment: true }],
+            },
+            { type: "html", name: "h" },
+          ],
+        },
+      ],
+    };
+    expect(answerNamesOf(definition)).toEqual(["a", "bv", "bv_c"]);
+  });
+
+  it("is empty for an empty definition", () => {
+    expect(answerNamesOf({})).toEqual([]);
   });
 });

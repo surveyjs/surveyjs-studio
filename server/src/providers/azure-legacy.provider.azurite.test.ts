@@ -12,6 +12,7 @@ import { createAzureLegacyProviders } from "./azure-legacy/index.js";
 import { createStubShareReader } from "./azure-legacy/legacy-shares-stub.js";
 import { describeCredentialStoreSuite } from "./suite/credential-store-suite.js";
 import { describeLicenceNoticeSuite } from "./suite/licence-notice-suite.js";
+import { surveyCampaign, surveyFeedback } from "./suite/expected.js";
 import { describeProviderSuite } from "./suite/provider-suite.js";
 
 // Runs in the `providers-azurite` Vitest project: `pnpm test:providers:azurite`. Its global setup
@@ -22,6 +23,27 @@ describeProviderSuite("azure-legacy (local replica)", async () =>
     legacyShares: createStubShareReader((await readLegacyFixtures()).files),
   }),
 );
+
+describe("azure-legacy private questions of the fixtures (local replica)", () => {
+  it("reads fixture 01 by the old rule: with both settings, the submit time and id join", async () => {
+    const providers = createAzureLegacyProviders(replicaConfig());
+    try {
+      expect(await providers.views.getPrivateQuestions(surveyFeedback.id)).toEqual([
+        "receipt",
+        "HappendAt",
+        "InstanceId",
+      ]);
+      expect(await providers.views.getResultsPrivacy!(surveyFeedback.id)).toEqual({
+        privateQuestions: ["receipt", "HappendAt", "InstanceId"],
+        publicOnly: ["satisfaction"],
+        lockedQuestions: [],
+      });
+      expect(await providers.views.getPrivateQuestions(surveyCampaign.id)).toEqual([]);
+    } finally {
+      await providers.close();
+    }
+  });
+});
 
 describeLicenceNoticeSuite("azure-legacy (local replica)", (now) =>
   Promise.resolve(

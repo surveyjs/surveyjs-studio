@@ -1511,8 +1511,12 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
         '[{"name":"q2","isPublic":false},{"name":"q1","isPublic":false}]',
       );
       expect(await store().views.getPrivateQuestions(survey.id)).toEqual(["q2", "q1"]);
+      // The stored marks stay, public now (the old service's full form).
       await store().views.savePrivateQuestions(survey.id, []);
-      expect(await blobText(CONTAINER, survey.id)).toBe("[]");
+      expect(await blobText(CONTAINER, survey.id)).toBe(
+        '[{"name":"q2","isPublic":true},{"name":"q1","isPublic":true}]',
+      );
+      expect(await store().views.getPrivateQuestions(survey.id)).toEqual([]);
       expect(await rawRow(survey.id)).toEqual(before);
       expect(await auditRows(survey.id)).toHaveLength(auditBefore);
     });
@@ -1541,6 +1545,172 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
       await empty.create();
       await expect(store().views.getPrivateQuestions(survey.id)).rejects.toThrow(LegacyStoreError);
       expect(warnings.slice(before)).toEqual([]);
+    });
+
+    describe("with the old results column layout (ADR 0016, changed 2026-11-26)", () => {
+      // q2 holds its answer under "v2"; "k" is a key only responses hold.
+      const definition = {
+        elements: [
+          { type: "text", name: "q1" },
+          { type: "text", name: "q2", valueName: "v2" },
+          { type: "text", name: "q3" },
+        ],
+      };
+      const layoutText = (newcolumnsvisibility: number) =>
+        JSON.stringify({
+          columns: [
+            { name: "HappendAt", visibility: 0 },
+            { name: "q1", visibility: 0 },
+            { name: "q2", visibility: 2 },
+            { name: "k", visibility: 0 },
+          ],
+          newcolumnsvisibility,
+        });
+      const sorted = (names: readonly string[] | null) => (names ? [...names].sort() : names);
+
+      /** A survey with the definition; the test deletes it and its blobs when it finishes. */
+      async function surveyWithQuestions() {
+        const survey = await store().surveys.createSurvey(newSurvey(personal()), definition);
+        onTestFinished(async () => {
+          await store().surveys.deleteSurvey(survey.id);
+          await store().views.deleteLayout(survey.id, "columns");
+        });
+        const client = blobs.getContainerClient(CONTAINER);
+        await client.createIfNotExists();
+        const putList = async (text: string) =>
+          client.getBlockBlobClient(survey.id).upload(text, Buffer.byteLength(text));
+        const privacy = async () => {
+          const read = await store().views.getResultsPrivacy!(survey.id);
+          expect(await store().views.getPrivateQuestions(survey.id)).toEqual(read.privateQuestions);
+          return {
+            privateQuestions: sorted(read.privateQuestions),
+            publicOnly: sorted(read.publicOnly),
+            lockedQuestions: read.lockedQuestions,
+          };
+        };
+        return { survey, putList, privacy };
+      }
+
+      it("reads the private questions by the old public results' rule in each case", async () => {
+        const { survey, putList, privacy } = await surveyWithQuestions();
+        const none = { privateQuestions: [], publicOnly: null, lockedQuestions: [] };
+        expect(await privacy()).toEqual(none);
+
+        // A list without a layout: its private entries.
+        await putList('[{"name":"q2","isPublic":false},{"name":"q1","isPublic":true}]');
+        expect(await privacy()).toEqual({ ...none, privateQuestions: ["q2"] });
+
+        // A layout without a list: the layout rule (new columns hidden: q3 and v2 too).
+        await blobs.getContainerClient(CONTAINER).getBlobClient(survey.id).delete();
+        await store().views.saveLayout(survey.id, "columns", layoutText(1));
+        expect(await privacy()).toEqual({
+          privateQuestions: ["InstanceId", "q2", "q3", "v2"],
+          publicOnly: ["HappendAt", "k", "q1"],
+          lockedQuestions: [],
+        });
+
+        // Both: public only what the list marks public and the layout lists; q3 is locked.
+        await store().views.saveLayout(survey.id, "columns", layoutText(0));
+        await putList(
+          JSON.stringify(["q1", "q2", "q3", "k"].map((name) => ({ name, isPublic: true }))),
+        );
+        expect(await privacy()).toEqual({
+          privateQuestions: ["HappendAt", "InstanceId", "q3", "v2"],
+          publicOnly: ["k", "q1", "q2"],
+          lockedQuestions: ["q3"],
+        });
+
+        // A layout the old calculation fails on: never "every question public".
+        await store().views.saveLayout(survey.id, "columns", "[]");
+        await expect(store().views.getResultsPrivacy!(survey.id)).rejects.toThrow(
+          "Legacy store layout read failed",
+        );
+        await expect(store().views.getPrivateQuestions(survey.id)).rejects.toThrow(
+          LegacyStoreError,
+        );
+      });
+
+      it("saves the old service's full form, and a save then a read keeps the owner's choice", async () => {
+        const { survey, putList, privacy } = await surveyWithQuestions();
+        await store().views.saveLayout(survey.id, "columns", layoutText(0));
+        // As the old site saved it: the submit time public too.
+        await putList(
+          '[{"name":"HappendAt","isPublic":true},{"name":"q1","isPublic":true},{"name":"q2","isPublic":true}]',
+        );
+        const before = await store().views.getPrivateQuestions(survey.id);
+        expect(sorted(before)).toEqual(["InstanceId", "k", "q3", "v2"]);
+
+        // The owner makes q2 private.
+        await store().views.savePrivateQuestions(survey.id, [...before, "q2"]);
+        const written = JSON.parse(await blobText(CONTAINER, survey.id)) as unknown[];
+        expect(written).toEqual([
+          { name: "q1", isPublic: true },
+          { name: "q2", isPublic: false },
+          { name: "q3", isPublic: false },
+          { name: "HappendAt", isPublic: true },
+          { name: "v2", isPublic: false },
+          { name: "InstanceId", isPublic: false },
+          { name: "k", isPublic: false },
+        ]);
+        expect(await blobType(CONTAINER, survey.id)).toBe("AppendBlob");
+        expect(await privacy()).toEqual({
+          privateQuestions: ["InstanceId", "k", "q2", "q3", "v2"],
+          publicOnly: ["HappendAt", "q1"],
+          lockedQuestions: ["q3"],
+        });
+
+        // Saving what was read changes nothing.
+        await store().views.savePrivateQuestions(
+          survey.id,
+          await store().views.getPrivateQuestions(survey.id),
+        );
+        expect(JSON.parse(await blobText(CONTAINER, survey.id))).toEqual(written);
+      });
+
+      it("reads a list Studio wrote with private entries only as nothing public, until the next save", async () => {
+        const { survey, putList, privacy } = await surveyWithQuestions();
+        await store().views.saveLayout(survey.id, "columns", layoutText(0));
+        await putList('[{"name":"q2","isPublic":false}]');
+        expect(await privacy()).toEqual({
+          privateQuestions: ["HappendAt", "InstanceId", "k", "q1", "q2", "q3", "v2"],
+          publicOnly: [],
+          lockedQuestions: ["q3"],
+        });
+
+        // The owner makes q1 public: the full form makes it public for the old readers too.
+        await store().views.savePrivateQuestions(survey.id, ["q2"]);
+        expect(await blobText(CONTAINER, survey.id)).toBe(
+          '[{"name":"q1","isPublic":true},{"name":"q2","isPublic":false},{"name":"q3","isPublic":true}]',
+        );
+        expect(await privacy()).toEqual({
+          privateQuestions: ["HappendAt", "InstanceId", "k", "q2", "q3", "v2"],
+          publicOnly: ["q1"],
+          lockedQuestions: ["q3"],
+        });
+      });
+
+      it("keeps a stored private mark that a save in the bridge's shape leaves out (the submit time)", async () => {
+        const { survey, putList, privacy } = await surveyWithQuestions();
+        await store().views.saveLayout(survey.id, "columns", layoutText(0));
+        await putList(
+          '[{"name":"HappendAt","isPublic":false},{"name":"k","isPublic":true},' +
+            '{"name":"q1","isPublic":true},{"name":"q2","isPublic":true}]',
+        );
+        // The old API's setResultPermissions names the questions it marks private only.
+        await store().views.savePrivateQuestions(survey.id, ["q2"]);
+        expect(JSON.parse(await blobText(CONTAINER, survey.id))).toEqual([
+          { name: "q1", isPublic: true },
+          { name: "q2", isPublic: false },
+          { name: "q3", isPublic: true },
+          { name: "HappendAt", isPublic: false },
+          { name: "k", isPublic: true },
+        ]);
+        expect(await privacy()).toEqual({
+          privateQuestions: ["HappendAt", "InstanceId", "q2", "q3", "v2"],
+          publicOnly: ["k", "q1"],
+          lockedQuestions: ["q3"],
+        });
+      });
     });
 
     it("removes the blob with the survey", async () => {

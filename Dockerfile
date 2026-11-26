@@ -13,6 +13,7 @@ COPY conformance-tests/package.json conformance-tests/
 COPY e2e/package.json e2e/
 COPY bridge/package.json bridge/
 COPY metrics/package.json metrics/
+COPY column-layout/package.json column-layout/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
@@ -51,6 +52,10 @@ COPY --from=build /out/server /app/server
 COPY --from=build /src/web/dist /app/web
 COPY --from=build /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 COPY LICENSE /app/LICENSE
+# The operator commands, on the PATH of both images built from this stage: backups, restores and
+# migrations; the hosted image also `surveyjs-studio migrate-hosted` (removed from the self-hosted one).
+RUN printf '%s\n' '#!/bin/sh' 'cd /app/server && exec node --import tsx src/cli/surveyjs-studio.ts "$@"' > /usr/local/bin/surveyjs-studio \
+    && chmod 755 /usr/local/bin/surveyjs-studio
 
 # The free self-hosted image (mode 2b): build it with --target self-hosted.
 FROM app AS self-hosted
@@ -69,8 +74,8 @@ LABEL org.opencontainers.image.title="SurveyJS Studio" \
       org.opencontainers.image.version=$VERSION \
       org.opencontainers.image.description="SurveyJS Studio, self-hosted: create, host and analyze surveys on your own server." \
       org.opencontainers.image.licenses="MIT"
-RUN printf '%s\n' '#!/bin/sh' 'cd /app/server && exec node --import tsx src/cli/surveyjs-studio.ts "$@"' > /usr/local/bin/surveyjs-studio \
-    && chmod 755 /usr/local/bin/surveyjs-studio
+# The hosted edition's migration tool (`surveyjs-studio migrate-hosted`) is not part of this image.
+RUN rm -rf /app/server/src/migrate
 # A new named volume inherits this owner. /backups is no VOLUME: it is where an admin mounts one.
 RUN mkdir -p /data /backups && chown node:node /data /backups
 VOLUME /data

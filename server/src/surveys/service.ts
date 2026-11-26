@@ -7,7 +7,14 @@ import type { ProjectMembership, SurveyOwner } from "../domain/types.js";
 import { AppError } from "../errors.js";
 import { decodeSurveyCursor, encodeSurveyCursor, type SurveyList } from "../paging/cursor.js";
 import { rewriteFileIds } from "../files/rewrite.js";
-import type { ProjectStore, FileStore, SurveyStore, ViewStore } from "../providers/types.js";
+import type {
+  ProjectStore,
+  FileStore,
+  ResultsPrivacy,
+  SurveyStore,
+  ViewStore,
+} from "../providers/types.js";
+import { resultsPrivacyOf } from "../results/privacy.js";
 import { createSurveyAccess, notFound } from "./access.js";
 import { surveyJson, type SurveyJson } from "./json.js";
 import { cloneName, nextNewSurveyName } from "./naming.js";
@@ -152,9 +159,9 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
   async function privateQuestionsFor(
     surveyId: string,
     log: WarningLog,
-  ): Promise<readonly string[] | undefined> {
+  ): Promise<ResultsPrivacy | undefined> {
     try {
-      return await views.getPrivateQuestions(surveyId);
+      return await resultsPrivacyOf(views, surveyId);
     } catch {
       log.warn({ surveyId }, "The private-question list cannot be read; answered without it.");
       return undefined;
@@ -328,10 +335,14 @@ export function createSurveysService(options: SurveysServiceOptions): SurveysSer
       // The rights follow the stored scope: a move changes the scope and the creator.
       const membership =
         stored.owner.kind === "project" ? await membershipOf(user, stored.owner.projectId) : null;
+      // A store with a rule of its own answers the list as it reads it back: on the old stores a
+      // locked question stays private whatever was sent (ADR 0016, changed 2026-11-26).
       return surveyJson(
         stored,
         canModify(stored, user, membership),
-        names ?? (await privateQuestionsFor(stored.id, log)),
+        names !== undefined && views.getResultsPrivacy === undefined
+          ? names
+          : await privateQuestionsFor(stored.id, log),
       );
     },
 

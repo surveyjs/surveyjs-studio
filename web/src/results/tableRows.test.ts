@@ -36,6 +36,12 @@ describe("extraTableColumns", () => {
     ]);
   });
 
+  it("leaves out a private extra column, and its cells (the public page: the submit time)", () => {
+    const hidden = new Set(["HappendAt", "q2"]);
+    expect(extraTableColumns([base], new Set(["q1"]), hidden)).toEqual([]);
+    expect(tableRows([base], new Set(["q1"]), hidden)).toEqual([{ q1: 1 }]);
+  });
+
   it("skips a column a question already uses", () => {
     expect(extraTableColumns([withIp], new Set(["HappendAt"]))).toEqual([
       { name: "IPAddress", displayName: "IPAddress", isVisible: true },

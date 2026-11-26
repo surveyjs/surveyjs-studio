@@ -126,6 +126,7 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         "files",
         "legacy_access_keys",
         "legacy_files",
+        "migration_state",
         "password_links",
         "private_questions",
         "project_invitations",
@@ -214,6 +215,31 @@ export function describeMigratorSuite(dialect: SqlDialectName): void {
         revoked_at: unknown;
       }>`select revoked_at from legacy_access_keys`.execute(db);
       expect(keys.rows[0]!.revoked_at).toBeNull();
+    });
+
+    it("adds migration_state and keeps the earlier rows (0012)", async () => {
+      const { database } = await fresh();
+      const { db } = database;
+      const shipped = loadMigrations(dialect);
+      await migrate(
+        database,
+        shipped.filter((m) => m.version < 12),
+      );
+      const userId = "11111111-0000-4000-8000-a00000000001";
+      await sql`insert into users (id, email, display_name, instance_role, status,
+          must_change_password, session_epoch, created_at)
+        values (${userId}, 'old@example.com', 'Old', 'user', 'active', false, 0,
+          '2026-09-01T10:00:00.000Z')`.execute(db);
+      const applied = await migrate(database, shipped);
+      expect(applied.applied.map((m) => m.version)).toEqual(
+        shipped.filter((m) => m.version >= 12).map((m) => m.version),
+      );
+      const { rows } = await sql<{ email: string }>`select email from users`.execute(db);
+      expect(rows).toEqual([{ email: "old@example.com" }]);
+      await sql`insert into migration_state (key, value, updated_at)
+        values ('run', '{"id":"r1"}', '2026-11-25T10:00:00.000Z')`.execute(db);
+      const state = await sql<{ key: string }>`select key from migration_state`.execute(db);
+      expect(state.rows).toEqual([{ key: "run" }]);
     });
 
     it("keeps the files and their legacy names when files gains an owner (0009)", async () => {

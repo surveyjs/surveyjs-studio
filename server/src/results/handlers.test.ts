@@ -401,6 +401,41 @@ describe("exportResults, deleteResults and getPublicResults", () => {
     expect(logLines.join("\n")).not.toContain("secret-answer");
   });
 
+  it("serves only the store's public keys when it names them: a layout-hidden question, a response-only key and the submit time stay out", async () => {
+    // As the old stores answer with both old settings (ADR 0016, changed 2026-11-26).
+    const privacy = {
+      privateQuestions: ["q2", "q3", "HappendAt", "InstanceId"],
+      publicOnly: ["q1", "q1-Comment"],
+      lockedQuestions: ["q3"],
+    };
+    const { server, providers, publish } = await start({
+      views: (store) => ({ ...store, getResultsPrivacy: () => Promise.resolve(privacy) }),
+    });
+    const survey = await publish({
+      elements: [
+        { type: "text", name: "q1", hasComment: true },
+        { type: "text", name: "q2" },
+        { type: "text", name: "q3" },
+      ],
+    });
+    await providers.surveys.updateSurvey(survey.id, {
+      settings: { publicResults: true },
+      updatedAt: NOW,
+    });
+    const data = { q1: "a", "q1-Comment": "c", q2: "b", q3: "d", k: "response-only" };
+    expect((await submit(server, survey, { data })).statusCode).toBe(201);
+
+    const res = await server.inject({ url: `/api/v1/public/surveys/${survey.id}/results` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      survey: { privateQuestions: string[] };
+      items: { data: Record<string, unknown> }[];
+    }>();
+    // The submit time is private too (`HappendAt`), so the items leave `submittedAt` out.
+    expect(body.items).toEqual([{ data: { q1: "a", "q1-Comment": "c" } }]);
+    expect(body.survey.privateQuestions).toEqual(privacy.privateQuestions);
+  });
+
   it("serves public results as no-store, without the private question", async () => {
     const { server } = await start();
     const res = await server.inject({ url: `/api/v1/public/surveys/${FEEDBACK}/results` });

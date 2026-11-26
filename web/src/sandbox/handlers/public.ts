@@ -467,6 +467,8 @@ export function publicHandlers(ctx: HandlerContext) {
         const definition = data.definitions[survey.id] ?? {};
         const privateQuestions = data.privateResultQuestions[survey.id] ?? [];
         const hidden = privateKeysOf(definition, privateQuestions);
+        // HappendAt is the old results' name of the submission time: private, it is left out.
+        const timePrivate = privateQuestions.includes("HappendAt");
         return HttpResponse.json(
           {
             survey: {
@@ -476,7 +478,7 @@ export function publicHandlers(ctx: HandlerContext) {
               privateQuestions: [...privateQuestions],
             },
             items: items.map((response) => ({
-              submittedAt: response.submittedAt,
+              ...(!timePrivate && { submittedAt: response.submittedAt }),
               data: withoutKeys(response.data, hidden),
             })),
             nextCursor,

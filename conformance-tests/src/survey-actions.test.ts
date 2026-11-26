@@ -13,7 +13,16 @@
  * with `onTestFinished` right after a survey is created, so it also runs when a test fails.
  */
 import { describe, expect, it, onTestFinished } from "vitest";
-import { GUID, call, codeOf, as, cleanUp, sandbox, walkItems } from "./harness.js";
+import {
+  GUID,
+  call,
+  codeOf,
+  as,
+  cleanUp,
+  feedbackPrivateQuestions,
+  sandbox,
+  walkItems,
+} from "./harness.js";
 import { fixtureUsers } from "./sign-in.js";
 
 const { owner, admin, outsider } = fixtureUsers;
@@ -219,6 +228,21 @@ describe("updateSurvey", () => {
     ).toBe(false);
   });
 
+  it("names no locked private question without the old results layout, and a patch cannot set one", async (ctx) => {
+    const headers = await as(ctx, admin);
+    const survey = await created(headers, { name: "Actions: locked private questions" });
+    expect(survey.settings).not.toHaveProperty("lockedPrivateResultQuestions");
+    await tick();
+    const first = await patched(headers, survey.id, {
+      settings: { privateResultQuestions: ["q1"], lockedPrivateResultQuestions: ["q2"] },
+    });
+    expect(first.settings.privateResultQuestions).toEqual(["q1"]);
+    expect(first.settings).not.toHaveProperty("lockedPrivateResultQuestions");
+    expect((await read(headers, survey.id)).settings).not.toHaveProperty(
+      "lockedPrivateResultQuestions",
+    );
+  });
+
   it("replaces the private-question list, keeps it across other patches and clears it", async (ctx) => {
     const headers = await as(ctx, admin);
     const survey = await created(headers, { name: "Actions: private questions" });
@@ -285,7 +309,7 @@ describe("updateSurvey", () => {
 
   it("returns the fixture survey's private questions from getSurvey", async (ctx) => {
     const survey = await read(await as(ctx, owner), "22222222-0000-4000-8000-a00000000001");
-    expect(survey.settings.privateResultQuestions).toEqual(["receipt"]);
+    expect(survey.settings.privateResultQuestions).toEqual(feedbackPrivateQuestions);
   });
 
   it("applies a combined patch at once, sent as application/json", async (ctx) => {
