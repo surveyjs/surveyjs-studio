@@ -29,7 +29,6 @@ import { legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, LayoutKind, SurveyRecord, SurveyResponse } from "../domain/types.js";
 import {
   fileRecordFromBlob,
-  isGuid,
   UPLOADS_PREFIX,
   userFromLegacy,
 } from "../providers/azure-legacy/mapping.js";
@@ -51,7 +50,7 @@ import {
   sameNames,
   storedJson,
 } from "./compare.js";
-import { CHECKPOINT, inParallel, type SurveyCheckpoint } from "./copy.js";
+import { CHECKPOINT, eventRec, inParallel, type SurveyCheckpoint } from "./copy.js";
 import { CONCURRENCY } from "./delta.js";
 import { fileLinks } from "./map/files.js";
 import { mapPeople } from "./map/people.js";
@@ -522,7 +521,8 @@ export async function runVerify(
       "survey_events",
       mapAsync(source.events(), (event) => {
         if (sample && !copied.has(event.surveyId.toLowerCase())) return null;
-        if (!isGuid(event.id) || !isGuid(event.surveyId)) return null;
+        // The events the copy writes (`eventRec` skips the unmappable ones).
+        if (eventRec(event, quiet()) === null) return null;
         return { key: event.id.toLowerCase(), late: after("tables", event.timestamp) };
       }),
     );

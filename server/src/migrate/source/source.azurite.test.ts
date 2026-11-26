@@ -231,8 +231,8 @@ describe("the legacy source readers (local replica)", () => {
       expect(markers.map((m) => m.clientId).sort()).toEqual(
         table.entities.map((e) => String(e.RowKey)).sort(),
       );
-      expect(markers.map((m) => m.partial)).toEqual(
-        table.entities.map((e) => e.ispartialcompleted === true),
+      expect(markers.map((m) => m.ispartialcompleted)).toEqual(
+        table.entities.map((e) => e.ispartialcompleted),
       );
       expect(await collect(source.markers(surveyId, FUTURE))).toEqual([]);
     }

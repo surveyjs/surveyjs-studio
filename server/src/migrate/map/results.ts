@@ -4,20 +4,24 @@ import {
   responseFromLegacy,
   UnmappableLegacyRowError,
 } from "../../providers/azure-legacy/mapping.js";
-import type { LegacyResultEntity } from "../../providers/azure-legacy/rows.js";
 import { historyOrder } from "../../providers/ordering.js";
-import type { DeletedRec, HistoryRec, ResponseRec } from "../records.js";
+import type { DeletedRec, HistoryRec, MarkerRec, ResponseRec } from "../records.js";
+import type { ResultRow } from "../source/tables.js";
 import type { Report } from "./report.js";
 import { objectOf, withoutBom, withoutNul } from "./text.js";
 
 /** History entries kept per survey: the newest by (at desc, id desc). */
 export const HISTORY_KEEP = 20;
 
-/** The response of a row, BOM and NUL handled; null (reported under `entity`) when unmappable. */
+/**
+ * The response of a row, BOM and NUL handled; null (reported under `entity`) when unmappable, as
+ * the app's reader skips it: an id that is not a GUID, a time that is not a date, a result that
+ * is not a JSON object.
+ */
 function readResponse(
   entity: string,
   surveyId: string,
-  row: LegacyResultEntity,
+  row: ResultRow,
   report: Report,
 ): SurveyResponse | null {
   const ids = { surveyId, responseId: row.id.toLowerCase() };
@@ -25,9 +29,14 @@ function readResponse(
     report.skip(entity, ids, "the id is not a GUID");
     return null;
   }
+  const { happendat } = row;
+  if (happendat === null) {
+    report.skip(entity, ids, "the time is not a date");
+    return null;
+  }
   let response: SurveyResponse;
   try {
-    response = responseFromLegacy({ ...row, result: withoutBom(row.result) });
+    response = responseFromLegacy({ ...row, happendat, result: withoutBom(row.result) });
   } catch (error) {
     if (!(error instanceof UnmappableLegacyRowError)) throw error;
     report.skip(entity, ids, error.message);
@@ -37,28 +46,38 @@ function readResponse(
   return clean;
 }
 
-/** A response (a `post{postId}` row) of the survey; the client id is kept as stored. */
+/**
+ * A response (a `post{postId}` row) of the survey; the client id is kept as stored. Its id is the
+ * row key, as the app reads it; a row whose `id` property says otherwise is noted.
+ */
 export function mapResponse(
   surveyId: string,
-  entity: LegacyResultEntity,
+  entity: ResultRow,
   report: Report,
 ): ResponseRec | null {
   const id = surveyId.toLowerCase();
   const response = readResponse("response", id, entity, report);
-  return response === null ? null : { surveyId: id, response };
+  if (response === null) return null;
+  if (entity.idProperty !== undefined && entity.idProperty.toLowerCase() !== response.id) {
+    report.note("response_id_differs", { surveyId: id, responseId: response.id });
+  }
+  return { surveyId: id, response };
 }
 
-/** A deleted-response copy: answers, client id, partial flag and IP in one JSON object. */
+/**
+ * A deleted-response copy: answers, client id, partial flag and IP in one JSON object, deleted at
+ * the copy's time (a copy without one is skipped and reported).
+ */
 export function mapDeleted(
   surveyId: string,
-  copy: { responseId: string; deletedAt: Date; entity: LegacyResultEntity },
+  copy: { responseId: string; deletedAt: Date | null; entity: ResultRow },
   report: Report,
 ): DeletedRec | null {
   const id = surveyId.toLowerCase();
   const response = readResponse(
     "deleted_response",
     id,
-    { ...copy.entity, id: copy.responseId },
+    { ...copy.entity, id: copy.responseId, happendat: copy.deletedAt },
     report,
   );
   if (response === null) return null;
@@ -66,9 +85,27 @@ export function mapDeleted(
   return {
     surveyId: id,
     responseId: response.id,
-    deletedAt: copy.deletedAt.toISOString(),
+    deletedAt: response.submittedAt,
     response: JSON.stringify({ data, clientId, partial, respondentIp }),
   };
+}
+
+/**
+ * A completion marker: partial only for a stored Boolean true. A flag stored as anything else
+ * (the old reader also took the text "1" as partial) is noted, by the survey only: a client id
+ * can be an email.
+ */
+export function mapMarker(
+  surveyId: string,
+  marker: { clientId: string; ispartialcompleted: unknown },
+  report: Report,
+): MarkerRec {
+  const id = surveyId.toLowerCase();
+  const flag = marker.ispartialcompleted;
+  if (flag !== undefined && flag !== null && typeof flag !== "boolean") {
+    report.note("marker_partial_not_boolean", { surveyId: id });
+  }
+  return { surveyId: id, clientId: marker.clientId, partial: flag === true };
 }
 
 /**

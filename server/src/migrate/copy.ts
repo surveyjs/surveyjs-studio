@@ -13,7 +13,7 @@ import type { DumpKind, DumpRecords, DumpWriter } from "./dump.js";
 import { fileLinks } from "./map/files.js";
 import { mapPeople } from "./map/people.js";
 import { createReport, phaseTimer, type Report } from "./map/report.js";
-import { HISTORY_KEEP, mapDeleted, mapHistory, mapResponse } from "./map/results.js";
+import { HISTORY_KEEP, mapDeleted, mapHistory, mapMarker, mapResponse } from "./map/results.js";
 import { mapSurvey } from "./map/surveys.js";
 import { mapView } from "./map/views.js";
 import { takeMarks } from "./marks.js";
@@ -183,22 +183,55 @@ export function dumper(dump: DumpWriter | undefined) {
   };
 }
 
-/** A legacy event row as the target's event; null (reported) when an id is not a GUID. */
+/** Payload properties that hold ids: lower-cased (N1). Others are kept as stored. */
+const EVENT_GUIDS = new Set(["postid", "resultid", "userid", "creatorid"]);
+/** Payload properties dropped: the pre-port respondent address (personal data, no reader). */
+const EVENT_DROPPED = new Set(["ipaddress"]);
+
+/**
+ * A legacy event row as the target's event, keyed by its row key as the app writes it; null
+ * (reported) when an id is not a GUID or the time is not a date. An `id` property that differs
+ * from the key is noted.
+ */
 export function eventRec(
-  event: { id: string; surveyId: string; type: string; at: Date; rest: Record<string, unknown> },
+  event: {
+    id: string;
+    idProperty?: string;
+    surveyId: string;
+    type: string;
+    at: Date | null;
+    rest: Record<string, unknown>;
+  },
   report: Report,
 ): EventRec | null {
-  const surveyId = event.surveyId.toLowerCase();
+  const ids = { eventId: event.id.toLowerCase(), surveyId: event.surveyId.toLowerCase() };
   if (!isGuid(event.id) || !isGuid(event.surveyId)) {
-    report.skip("event", { eventId: event.id.toLowerCase(), surveyId }, "an id is not a GUID");
+    report.skip("event", ids, "an id is not a GUID");
     return null;
   }
+  if (event.at === null) {
+    report.skip("event", ids, "the time is not a date");
+    return null;
+  }
+  if (event.idProperty !== undefined && event.idProperty.toLowerCase() !== ids.eventId) {
+    report.note("event_id_differs", ids);
+  }
+  const payload = Object.fromEntries(
+    Object.entries(event.rest)
+      .filter(([key]) => !EVENT_DROPPED.has(key))
+      .map(([key, value]) => [
+        key,
+        EVENT_GUIDS.has(key) && typeof value === "string" && isGuid(value)
+          ? value.toLowerCase()
+          : value,
+      ]),
+  );
   return {
-    id: event.id.toLowerCase(),
-    surveyId,
+    id: ids.eventId,
+    surveyId: ids.surveyId,
     type: event.type,
     at: event.at.toISOString(),
-    payload: Object.keys(event.rest).length > 0 ? JSON.stringify(event.rest) : null,
+    payload: Object.keys(payload).length > 0 ? JSON.stringify(payload) : null,
   };
 }
 
@@ -235,8 +268,11 @@ export function createSurveyCopier(
   const at = () => options.now().toISOString();
   const write = dumper(options.dump);
   const { state } = target;
-  /** The legacy files handled in this run (`{kind}/{name}`). */
-  const linked = new Set<string>();
+  /**
+   * The legacy files handled in this run (`{kind}/{name}`), each with its copy: a survey that
+   * links a file another survey's task is still writing waits for it before its checkpoint.
+   */
+  const linked = new Map<string, Promise<void>>();
   let responseBatches = 0;
 
   const texts = async (surveyId: string): Promise<SurveyTexts> => {
@@ -359,7 +395,7 @@ export function createSurveyCopier(
       await write("marker", batch);
     });
     for await (const marker of source.markers(surveyId, since)) {
-      await markers.add({ surveyId, clientId: marker.clientId, partial: marker.partial });
+      await markers.add(mapMarker(surveyId, marker, report));
     }
     await markers.flush();
 
@@ -398,13 +434,27 @@ export function createSurveyCopier(
     links: Link[],
     { skipStored = false }: { skipStored?: boolean } = {},
   ) {
-    let fresh: Link[] = [];
+    const fresh = new Map<string, Link>();
+    const elsewhere = new Set<Promise<void>>();
     for (const link of links) {
       const key = `${link.kind}/${link.name}`;
-      if (linked.has(key)) continue;
-      linked.add(key);
-      fresh.push(link);
+      const running = linked.get(key);
+      if (running) elsewhere.add(running);
+      else fresh.set(key, link);
     }
+    // Claimed before anything is awaited, so no other survey starts the same file.
+    const own = copyFiles(surveyId, [...fresh.values()], skipStored).catch((error: unknown) => {
+      // A failed file is copied again by the next survey that links it.
+      for (const key of fresh.keys()) linked.delete(key);
+      throw error;
+    });
+    for (const key of fresh.keys()) linked.set(key, own);
+    await Promise.all([own, ...elsewhere]);
+  }
+
+  /** The files' bytes, then their rows (`skipStored`: not those the target holds already). */
+  async function copyFiles(surveyId: string, links: Link[], skipStored: boolean) {
+    let fresh = links;
     if (skipStored && fresh.length > 0) {
       const stored = new Set(
         await target.existingKeys(
@@ -491,16 +541,15 @@ export function createSurveyCopier(
 /**
  * Refuses a copy whose sample differs from the one the target already holds (a full copy is the
  * null sample). Another copy would rewrite the stored sample, and a later `reconcile --sample`
- * would then delete everything outside it. A target holds a copy once a survey is checkpointed or
- * a pass finished; the sample is written before either. Only `wipe` starts the target afresh.
+ * would then delete everything outside it. A copy records its sample before its first write of
+ * any kind, so a target holds (part of) a copy exactly when the record is there, the stored null
+ * of a full copy included. Only `wipe` starts the target afresh.
  */
 async function requireCopyFits(
   state: MigrationState,
   sample: SampleSet | undefined,
 ): Promise<void> {
-  const holdsCopy =
-    (await state.get(COPY_COMPLETE)) !== null || (await state.keys(CHECKPOINT)).length > 0;
-  if (!holdsCopy) return;
+  if (!(await state.keys(SAMPLE)).includes(SAMPLE)) return;
   const why = sampleMismatch(await state.get<StoredSample>(SAMPLE), sample);
   if (why !== null) throw new Refused(`${why}, or wipe the target to copy something else`);
 }
@@ -518,6 +567,9 @@ export async function runCopy(
   const phase = phaseTimer(report, progress);
   const { state } = target;
   await requireCopyFits(state, sample);
+  // What this copy covers, for the commands after it (the sample, or null for everything): the
+  // first write, so a run stopped anywhere leaves a target only the same sample may copy into.
+  await state.set(SAMPLE, storedSampleOf(sample), at());
   const write = dumper(dump);
 
   // The run keeps its start across resumed runs; the marks are the first run's, so a later
@@ -535,8 +587,6 @@ export async function runCopy(
       }),
       at(),
     );
-  // What this copy covers, for the commands after it: the sample, or null for everything.
-  await state.set(SAMPLE, storedSampleOf(sample), at());
   const checkpoints = new Set(
     (await state.keys(CHECKPOINT)).map((key) => key.slice(CHECKPOINT.length)),
   );

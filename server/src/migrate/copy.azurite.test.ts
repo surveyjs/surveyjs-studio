@@ -21,7 +21,7 @@ import {
 import { describeProviderSuite } from "../providers/suite/provider-suite.js";
 import type { SqlDatabase } from "../sql/database.js";
 import type { DatabaseSchema } from "../sql/schema.js";
-import { runCopy, type CopyOptions } from "./copy.js";
+import { createSurveyCopier, runCopy, type CopyOptions } from "./copy.js";
 import { runDelta } from "./delta.js";
 import { openDumpWriter } from "./dump.js";
 import { createReport, type Report } from "./map/report.js";
@@ -684,6 +684,46 @@ describe("a sample copy from the local replica", () => {
     }
   });
 
+  it("refuses another sample, or a full copy, after a run stopped before its first checkpoint", async () => {
+    fixtures ??= await readLegacyFixtures();
+    const source = openSource();
+    const stopped = () => Promise.reject(new Error("stopped"));
+    const atMarks = { ...source, latestChanges: stopped };
+    const inResponses = {
+      ...source,
+      responses: () => ({ [Symbol.asyncIterator]: () => ({ next: stopped }) }),
+    };
+    const sampleOnto = await newTarget();
+    const fullOnto = await newTarget();
+    try {
+      const sample = await selectSample(source, 0, [OWNER_ID]);
+      const other = await selectSample(source, 0, [OUTSIDER_ID]);
+      const copy = (from: LegacySource, into: Target, options: Partial<CopyOptions>) =>
+        runCopy(from, into.target, { now, ...options, report: createReport() });
+
+      // Stopped before any write but the sample's record (the marks are the first read).
+      await expect(copy(atMarks, sampleOnto, { sample })).rejects.toThrow(/stopped/);
+      await expect(copy(source, sampleOnto, { sample: other })).rejects.toThrow(/wipe/);
+      await expect(copy(source, sampleOnto, {})).rejects.toThrow(/wipe/);
+      // Stopped with profiles, projects and surveys written, none checkpointed.
+      await expect(copy(inResponses, sampleOnto, { sample })).rejects.toThrow(/stopped/);
+      expect(await sampleOnto.target.state.keys("survey:")).toEqual([]);
+      expect(await count(sampleOnto.database, "surveys")).toBeGreaterThan(0);
+      await expect(copy(source, sampleOnto, { sample: other })).rejects.toThrow(/wipe/);
+      expect(await sampleOnto.target.state.get("sample")).toMatchObject({
+        accounts: [OWNER_ID.toLowerCase()],
+      });
+
+      // A full copy's record is null: present, so a sample is refused there too.
+      await expect(copy(atMarks, fullOnto, {})).rejects.toThrow(/stopped/);
+      await expect(copy(source, fullOnto, { sample })).rejects.toThrow(/wipe/);
+    } finally {
+      await source.close();
+      await sampleOnto.close();
+      await fullOnto.close();
+    }
+  });
+
   it("plans the sample: its survey ids and its accounts' key hashes, the volumes and the estimate", async () => {
     fixtures ??= await readLegacyFixtures();
     const source = openSource();
@@ -704,6 +744,51 @@ describe("a sample copy from the local replica", () => {
       expect(plan.estimate).not.toBeNull();
     } finally {
       await source.close();
+    }
+  });
+});
+
+describe("a file several surveys link", () => {
+  it("lets no survey go on to its checkpoint while another survey's task still writes the file", async () => {
+    const into = await newTarget();
+    try {
+      let release = () => undefined as void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let reads = 0;
+      const source = {
+        async shareFile() {
+          reads += 1;
+          await held;
+          return Buffer.from("asset bytes");
+        },
+      } as unknown as LegacySource;
+      const copier = createSurveyCopier(source, into.target, {
+        ctx: {
+          projects: new Set(),
+          projectsWithoutMembers: new Set(),
+          people: new Set(),
+          legacyUsers: new Set(),
+          report: createReport(),
+        },
+        batchSize: 10,
+        now,
+      });
+      const link = { kind: "asset" as const, name: LEGACY_ASSET_NAME };
+      const first = copier.linkedFiles("22222222-0000-4000-8000-a00000000001", [link]);
+      let secondDone = false;
+      const second = copier
+        .linkedFiles("22222222-0000-4000-8000-a00000000002", [link])
+        .then(() => void (secondDone = true));
+      for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+      expect(secondDone).toBe(false);
+      release();
+      await Promise.all([first, second]);
+      expect(reads).toBe(1);
+      expect(
+        await into.target.existingKeys("legacy_files", [`asset/${LEGACY_ASSET_NAME}`]),
+      ).toEqual([`asset/${LEGACY_ASSET_NAME}`]);
+    } finally {
+      await into.close();
     }
   });
 });

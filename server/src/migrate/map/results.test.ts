@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LegacyResultEntity } from "../../providers/azure-legacy/rows.js";
 import { createReport } from "./report.js";
-import { mapDeleted, mapHistory, mapResponse } from "./results.js";
+import { mapDeleted, mapHistory, mapMarker, mapResponse } from "./results.js";
 
 const S = "0A1B2C3D-0000-4000-8000-00000000000A";
 const R = "0A1B2C3D-0000-4000-8000-0000000000FF";
@@ -55,6 +55,39 @@ describe("mapResponse", () => {
     expect(mapResponse(S, { ...entity("{}"), id: "x" }, report)).toBeNull();
     expect(report.counts()).toEqual({ "skipped:response": 3 });
   });
+
+  it("skips and reports a row whose time is not a date, as the app's reader skips it", () => {
+    const report = createReport();
+    expect(mapResponse(S, { ...entity("{}"), happendat: null }, report)).toBeNull();
+    expect(report.toJSON()).toMatchObject({
+      skipped: [
+        {
+          entity: "response",
+          ids: { surveyId: S.toLowerCase(), responseId: R.toLowerCase() },
+          reason: "the time is not a date",
+        },
+      ],
+    });
+  });
+
+  it("keeps the row key as the id and reports a row whose id property differs", () => {
+    const report = createReport();
+    const other = "0A1B2C3D-0000-4000-8000-0000000000EE";
+    expect(mapResponse(S, { ...entity("{}"), idProperty: R }, report)?.response.id).toBe(
+      R.toLowerCase(),
+    );
+    expect(report.counts()).toEqual({});
+    const rec = mapResponse(S, { ...entity("{}"), idProperty: other }, report);
+    expect(rec?.response.id).toBe(R.toLowerCase());
+    expect(report.toJSON()).toMatchObject({
+      notes: [
+        {
+          kind: "response_id_differs",
+          ids: { surveyId: S.toLowerCase(), responseId: R.toLowerCase() },
+        },
+      ],
+    });
+  });
 });
 
 describe("mapDeleted", () => {
@@ -90,6 +123,39 @@ describe("mapDeleted", () => {
     expect(mapDeleted(S, bad, report)).toBeNull();
     expect(mapDeleted(S, { ...bad, responseId: "x", entity: entity("{}") }, report)).toBeNull();
     expect(report.counts()).toEqual({ "skipped:deleted_response": 2 });
+  });
+
+  it("skips and reports a copy whose deletion time is not a date", () => {
+    const report = createReport();
+    const copy = { responseId: R, deletedAt: null, entity: entity("{}") };
+    expect(mapDeleted(S, copy, report)).toBeNull();
+    expect(report.toJSON()).toMatchObject({
+      skipped: [{ entity: "deleted_response", reason: "the time is not a date" }],
+    });
+  });
+});
+
+describe("mapMarker", () => {
+  it('is partial only for a Boolean true, and reports a flag that is no Boolean (the old reader took "1")', () => {
+    const report = createReport();
+    const marker = (ispartialcompleted: unknown) => ({ clientId: "Client-1", ispartialcompleted });
+    expect(mapMarker(S, marker(true), report)).toEqual({
+      surveyId: S.toLowerCase(),
+      clientId: "Client-1",
+      partial: true,
+    });
+    expect(mapMarker(S, marker(false), report).partial).toBe(false);
+    expect(mapMarker(S, marker(undefined), report).partial).toBe(false);
+    expect(report.counts()).toEqual({});
+    expect(mapMarker(S, marker("1"), report).partial).toBe(false);
+    expect(mapMarker(S, marker(1), report).partial).toBe(false);
+    // By the survey only: a client id can be an email.
+    expect(report.toJSON()).toMatchObject({
+      notes: [
+        { kind: "marker_partial_not_boolean", ids: { surveyId: S.toLowerCase() } },
+        { kind: "marker_partial_not_boolean", ids: { surveyId: S.toLowerCase() } },
+      ],
+    });
   });
 });
 

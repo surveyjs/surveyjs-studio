@@ -4,22 +4,39 @@ import { LegacyStoreError, statusOf } from "../../providers/azure-legacy/errors.
 import type { LegacyResultEntity } from "../../providers/azure-legacy/rows.js";
 import { API_TOKENS_TABLE } from "../../providers/azure-legacy/writes.js";
 
+/**
+ * A result row as the app's reader takes it (providers/azure-legacy/results.ts): the id is the row
+ * key, and `happendat` is null when the row holds no date there (the reader skips such a row).
+ */
+export interface ResultRow extends Omit<LegacyResultEntity, "happendat"> {
+  happendat: Date | null;
+  /**
+   * The row's `id` property, when it holds one: never the id (a response whose `id` property
+   * differs from its key is reported).
+   */
+  idProperty?: string;
+}
+
 /** The legacy Azure Tables, read only: pages of entities, never a table in memory. */
 export interface TableSource {
-  responses(postId: string, since?: Date): AsyncIterable<LegacyResultEntity & { timestamp: Date }>;
+  responses(postId: string, since?: Date): AsyncIterable<ResultRow & { timestamp: Date }>;
+  /** `ispartialcompleted` as stored (the mapping takes only a Boolean true as partial). */
   markers(
     surveyId: string,
     since?: Date,
-  ): AsyncIterable<{ clientId: string; partial: boolean; timestamp: Date }>;
+  ): AsyncIterable<{ clientId: string; ispartialcompleted: unknown; timestamp: Date }>;
+  /** `deletedAt`: the copy's `happendat`, null when it holds no date. */
   deletedCopies(
     postId: string,
     since?: Date,
-  ): AsyncIterable<{ responseId: string; deletedAt: Date; entity: LegacyResultEntity }>;
+  ): AsyncIterable<{ responseId: string; deletedAt: Date | null; entity: ResultRow }>;
+  /** An event keyed by its row key (as the app writes it); `at` null when it holds no date. */
   events(since?: Date): AsyncIterable<{
     id: string;
+    idProperty?: string;
     surveyId: string;
     type: string;
-    at: Date;
+    at: Date | null;
     rest: Record<string, unknown>;
     timestamp: Date;
   }>;
@@ -61,6 +78,9 @@ const dateOf = (value: unknown): Date | undefined => {
     value instanceof Date ? value : typeof value === "string" ? new Date(value) : undefined;
   return date && Number.isFinite(date.getTime()) ? date : undefined;
 };
+/** A stored date (`Edm.DateTime`), as the app's reader takes one: anything else is none. */
+const storedDate = (value: unknown): Date | null =>
+  value instanceof Date && Number.isFinite(value.getTime()) ? value : null;
 /** An Edm.Guid (and other annotated) property comes as `{ type, value }`: its plain value. */
 const plain = (value: unknown): unknown =>
   typeof value === "object" && value !== null && !(value instanceof Date) && "value" in value
@@ -117,11 +137,13 @@ export function openTableSource(config: {
   }
   const results = (name: string) => tableClient(config.resultsStorageConnectionString, name);
 
-  const resultEntity = (row: Entity, id: string): LegacyResultEntity => {
+  const resultRow = (row: Entity, id: string): ResultRow => {
     const { result, clientid, ipaddress, ispartialcompleted } = row;
+    const idProperty = stringOf(row.id);
     return {
       id,
-      happendat: dateOf(row.happendat) ?? dateOf(row.timestamp) ?? EPOCH,
+      ...(idProperty !== undefined && { idProperty }),
+      happendat: storedDate(row.happendat),
       result: typeof result === "string" ? result : "",
       ...(typeof clientid === "string" && { clientid }),
       ...(typeof ipaddress === "string" && { ipaddress }),
@@ -148,10 +170,7 @@ export function openTableSource(config: {
     async *responses(postId, since) {
       const table = results(responseTableOf(postId));
       for await (const row of entitiesOf("response read", table, since)) {
-        yield {
-          ...resultEntity(row, stringOf(row.id) ?? row.rowKey ?? ""),
-          timestamp: dateOf(row.timestamp) ?? EPOCH,
-        };
+        yield { ...resultRow(row, row.rowKey ?? ""), timestamp: dateOf(row.timestamp) ?? EPOCH };
       }
     },
     async *markers(surveyId, since) {
@@ -159,7 +178,7 @@ export function openTableSource(config: {
       for await (const row of entitiesOf("marker read", table, since)) {
         yield {
           clientId: row.rowKey ?? "",
-          partial: row.ispartialcompleted === true,
+          ispartialcompleted: row.ispartialcompleted,
           timestamp: dateOf(row.timestamp) ?? EPOCH,
         };
       }
@@ -169,25 +188,26 @@ export function openTableSource(config: {
       for await (const row of entitiesOf("deleted response read", table, since)) {
         // The copy's `instanceid` is the deleted row's key; its time is the deletion time.
         const responseId = stringOf(row.instanceid) ?? "";
-        const entity = resultEntity(row, responseId);
+        const entity = resultRow(row, responseId);
         yield { responseId, deletedAt: entity.happendat, entity };
       }
     },
     async *events(since) {
       const table = tableClient(config.surveysStorageConnectionString, "surveys");
       for await (const row of entitiesOf("event read", table, since)) {
-        const timestamp = dateOf(row.timestamp) ?? EPOCH;
+        const idProperty = stringOf(row.id);
         yield {
-          id: stringOf(row.id) ?? row.rowKey ?? "",
+          id: row.rowKey ?? "",
+          ...(idProperty !== undefined && { idProperty }),
           surveyId: stringOf(row.surveyid) ?? "",
           type: stringOf(row.type) ?? "",
-          at: dateOf(row.happendat) ?? timestamp,
+          at: storedDate(row.happendat),
           rest: Object.fromEntries(
             Object.entries(row)
               .filter(([key]) => !EVENT_OWN.has(key))
               .map(([key, value]) => [key, plain(value)]),
           ),
-          timestamp,
+          timestamp: dateOf(row.timestamp) ?? EPOCH,
         };
       }
     },
