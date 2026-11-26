@@ -588,7 +588,8 @@ per user:
   its own here; the old code put it into the `SURVEY_UPDATE` row of a layout save).
 - **The public overlay is not used.** The old code copied the list into the `isPublic` marks of the saved
   layouts; this application keeps the list as the setting and sets the marks in the user's own layout when the
-  Summary mounts. The old `surveyresultcolumns` blob stays unread.
+  Summary mounts. The old `surveyresultcolumns` blob is read, for the privacy rule above, and never written by
+  this setting.
 - The survey deletion already removed this blob (one of the four layout blobs). A clone does not copy it.
 
 **Deleting all results (Step 10).** The old code deletes the tables `post{postId}` and `SurveyCompletion{surveyId}`

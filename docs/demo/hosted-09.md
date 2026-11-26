@@ -48,7 +48,10 @@ for await (const row of tokens.listEntities()) await tokens.deleteEntity(row.par
 ```
 
 A replica the automated tests have used may also hold editor files of no survey (`verify` reports
-`not_copied_user_files`); `pnpm demo:azurite:down` then `pnpm demo:azurite:up` gives a fresh one.
+`not_copied_user_files`); `pnpm demo:azurite:down` then `pnpm demo:azurite:up` gives a fresh one. `pnpm legacy:load`
+writes the fixtures just now, and the tool's marks are taken five minutes back of the source's clocks: **wait five
+minutes after `pnpm legacy:load` before section 1**, or the rows it wrote are listed as pending, and a `verify --full`
+that is green with a pending count above 0 does not prove the copy. Check that the summary line ends `0 pending`.
 
 `--source docker/azurite.env` names the replica in every command below. Reports hold ids and counts only, but keep real
 ones private; here they go into `$DEMO`.
@@ -61,8 +64,10 @@ ones private; here they go into `$DEMO`.
    pnpm migrate:hosted plan --source docker/azurite.env
    ```
 
-   - **Check:** a line `Plan: <n> users (<k> with an access key), <n> surveys, <n> projects, <n> members.` and an
-     estimate.
+   - **Check:** `Source: SQL server …, database …; storage accounts …` (names only: the tool says which stores it
+     opened), `SQL change times: the server's UTC offset …; column defaults: …` (the one assumption the marks make; a
+     `copy` refuses, exit 2, when a default takes local time on a server not on UTC), a line
+     `Plan: <n> users (<k> with an access key), <n> surveys, <n> projects, <n> members.` and an estimate.
 
 2. Copy everything into the target, then check it:
 
@@ -72,10 +77,11 @@ ones private; here they go into `$DEMO`.
    ```
 
    - **Check:** a progress line per phase with its time (`surveys: 9 copied, … (surveys: <n> ms)`), `copy: done`, then
-     `verify --full: OK, 0 differences` and `exit 0`. The replica's data, with its edge cases (surveys in projects that
-     no longer exist, partial responses), is copied; the report counts show what was noted or skipped. Rows the
-     replica's loader wrote in the last five minutes are listed under `pending`, not as differences: the marks are
-     taken five minutes back.
+     `verify --full: OK, 0 differences, 0 pending` and `exit 0`. The replica's data, with its edge cases (surveys in
+     projects that no longer exist, partial responses), is copied; the report counts show what was noted or skipped.
+     Rows the replica's loader wrote in the last five minutes are listed under `pending`, not as differences: the
+     marks are taken five minutes back. If the pending count is above 0, wait and run `delta`, `reconcile` and
+     `verify --full` again. The window's own run is stricter: `verify --no-pending` fails on any pending item.
 
 3. Open the report:
 
@@ -92,7 +98,9 @@ ones private; here they go into `$DEMO`.
    pnpm migrate:hosted verify --full --source docker/azurite.env --target "$DEMO/target.env"
    ```
 
-   - **Check:** `copy: done` and again `OK, 0 differences`. Nothing doubled: a copy is a set of upserts.
+   - **Check:** `copy: done` and again `OK, 0 differences`. Nothing doubled: a copy is a set of upserts. `copy` also
+     prints `Source: …` again: it records the source in the target, and `verify`, `delta` and `reconcile` refuse
+     (exit 2) another one.
 
 5. Run `verify` without `--target`.
 
@@ -101,7 +109,7 @@ ones private; here they go into `$DEMO`.
    ```
 
    - **Check:** `verify needs --target: …` and `exit 2`. `verify`, `delta`, `reconcile` and `wipe` never work on a scratch
-     target.
+     target. (`verify --no-pending` is the window's form: pending items fail it, exit 1; here it is not needed.)
 
 ## 2. Changes in the source: delta, reconcile, verify (checklist 2)
 
@@ -257,7 +265,8 @@ Stop shells 1 and 3 with Ctrl+C.
    ```
 
    - **Check:** the first says `Wiped target.db: <n> rows …`; the second says `0 rows` (a wipe repeated is harmless).
-     The schema stays, so a `copy` can start again.
+     The schema stays, so a `copy` can start again. A target somebody signed in to is refused unless the command has
+     `--even-if-used`; this demo target has no sign-in, so neither applies.
 
 ## On the new server (with the operator)
 
@@ -271,4 +280,7 @@ When the new server is built and the SurveyJS team's inputs are in ([Operations]
 ## Clean up
 
 Stop the shells with Ctrl+C, then `pnpm demo:azurite:down` (deletes the replica's data) and `rm -r ~/hosted-09-demo`. To
-keep the replica instead, `pnpm legacy:load` puts its fixtures back (the token row and the surveys you changed).
+keep the replica instead, `pnpm legacy:load` puts its fixtures back (the token row and the surveys you changed). It does
+not reset everything: the result tables of surveys you created, and the files Studio itself stored in the app's own
+files container, stay, so for a clean start use `down` and `up`. After a `legacy:load`, wait five minutes before the next
+run (section 1).

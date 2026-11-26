@@ -255,7 +255,10 @@ The rules are [ADR 0022](docs/adr/0022-users-from-sign-in.md), which supersedes 
   - checksums of definitions, themes and history snapshots;
   - for a random sample of surveys, the same reads through both providers' interfaces (list, definition, results pages, statistics, layouts, members), compared deeply.
 
-  Any difference is a no-go.
+  Any difference is a no-go. A change after the marks is pending, not a difference; the window's incremental `verify` runs with `--no-pending` and fails on any.
+
+- **Safety.** The source is read only, and the tool refuses a source that does not answer or is not the copy's, a sample other than the copy's, and a `wipe` of a target that shows use.
+- **Public answers.** A survey's `private_questions` follows the old public results' rule (column layout and permissions together; [ADR 0044](docs/adr/0044-the-hosted-migration-tool.md) point 4), so nothing the old public results hid becomes public. Studio on the old stores applies the same rule before the switch ([ADR 0016](docs/adr/0016-results-details-exports-and-public-results.md)).
 
 - **Dry run.** `copy` into a scratch database reports volumes and duration without touching the real target.
 

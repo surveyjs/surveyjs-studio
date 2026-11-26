@@ -269,7 +269,10 @@ service hid: a column the layout hides from public reads, and the submit time. T
   there.
 - **A known limit before the switch.** A stored `isPublic: true` for a name the definition does not have (the
   submit time, say) stays public when an old-API caller leaves it out of `setResultPermissions`; the old service
-  stored that list as sent, so the name became private there. Accepted for the old stores until the switch.
+  stored that list as sent, so the name became private there. Accepted for the old stores until the switch. The lock is
+  one-way too: on a survey with the old layout, a stored private submit-time entry cannot be made public again on the
+  old stores, through Studio or the old API's `setResultPermissions`, which the old service would have allowed. It fails
+  closed (the answer stays hidden).
 - **The limit.** With both settings, a question the layout does not list cannot be made public. `getSurvey` and
   `updateSurvey` name such questions in `settings.lockedPrivateResultQuestions` (read-only); the private Summary
   shows them as private with a one-line hint. `updateSurvey` answers the list as the store reads it back after a

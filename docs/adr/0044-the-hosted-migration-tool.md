@@ -2,10 +2,11 @@
 
 Status: Accepted (hosted Step 9, 2026-11-25). Settles how the data of today's service reaches the new server, inside
 the order set by [ADR 0042](0042-one-switch-to-the-new-server.md). Changes [ADR 0037](0037-access-keys-and-api-tokens.md)
-point 4 (revocations), [ADR 0043](0043-hosted-users-on-the-local-directory.md) point 6 (who is seeded, what `reconcile` removes) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and
-the operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md). Changed
-2026-11-26: copy fidelity (points 2, 3, 5, 7 and 8), verify as the go/no-go (point 6), and the privacy rule (point 4);
-see the end.
+point 4 (revocations), [ADR 0043](0043-hosted-users-on-the-local-directory.md) point 6 (who is seeded, what `reconcile`
+removes) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and the
+operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md). Changed
+2026-11-26: a correctness review of the tool (copy fidelity, the published snapshot, source safety, delta and
+reconcile, verify as the go/no-go) and the privacy rule (point 4); see the end.
 
 ## Context
 
@@ -81,7 +82,8 @@ becomes public on Studio's public page or through the bridge:
 - with a layout listing columns and no permissions setting: the answer columns the layout marked hidden or not public;
 - with both: every answer is private except those the permissions setting marked public **and** the layout lists (at
   any visibility); answers added later, answers only responses hold, and the response time and id are private too
-  (see "Changed 2026-11-26: the privacy rule").
+  (see "Changed 2026-11-26", the privacy rule). That holds for the names known to the copy: once Studio runs, its
+  private questions are a deny-list, so a name first seen after the switch is public, as in all of Studio.
 
 While a copy or `delta` writes a survey's responses, the stored list only grows: before a batch brings an answer name
 the list was not computed with, the rule is applied to it, so no answer is public, even for a moment, that the finished
@@ -114,13 +116,14 @@ other saved layouts, in `survey_layouts` (the bridge computes columns from it,
 - **Legacy access keys** are copied hashed (`hashCredential(key, "legacy-key")`) with their last four characters and
   `created_at` of the run. A blocked person's key is refused by `site_blocked`, not revoked.
 - **Members:** one row per project and person; an admin row wins; the old member id is dropped. A member is created at
-  the earliest time of the person's rows and updated at their latest change time.
+  the earliest time of the person's rows and updated at their latest change time (a row without one: its join time,
+  then the epoch).
 
 ### 6. What "go" means
 
 `verify` compares through both providers' domain reads, as of the high-water marks. A source record that changed after
 the marks is listed as **pending**, never as a difference; the next `delta` copies it. So is a deletion after the marks
-(see "Changed 2026-11-26: verify as the go/no-go" for which). Any difference makes the run red (exit 1). There are two
+(see "Changed 2026-11-26", verify, for which). Any difference makes the run red (exit 1). There are two
 modes:
 
 - **Full** (`--full`), the day before the window, after a daily `delta` and `reconcile`: every survey's record,
@@ -168,8 +171,8 @@ a full copy would hold them. `plan --sample` also writes the sample's survey ids
   whose own id field differs is reported), and a response or event without a stored time is skipped and reported. A
   completion marker whose partial flag is not a Boolean is copied as complete and reported.
 - **Deleted responses** keep the answers, client id, partial flag and respondent address as one JSON object, with the
-  deletion time of the copy; a copy without one is kept at its storage time, and noted. Events keep their ids, types, times and payload text, without the respondent address older
-  rows carry; the ids in the payload are lower-cased.
+  deletion time of the copy; a copy without one is kept at its storage time, and noted. Events keep their ids, types, times and payload text,
+  without the respondent address older rows carry; the ids in the payload are lower-cased.
 - **Local times** written without a zone (survey created, project and member times) are read as UTC.
 - **An id that is not a GUID** is skipped and reported, never a crash. Completion markers keep their client id as stored.
 
@@ -187,10 +190,12 @@ Actions log.
 
 ### 11. Inputs from the SurveyJS team, before the real runs
 
-The time zone and clock questions are settled (see "Changed 2026-11-26: delta and reconcile").
+The time zone and clock questions are settled (see "Changed 2026-11-26", delta and reconcile).
 
 - **The real column list of the old SQL tables** (run `pnpm inspect:legacy-schema`, read only, again).
 - **Read-only credentials:** a read-only SQL login; the storage accounts and file shares with read and list only.
+- **Can the site clear a user's access key?** `delta` removes the stored key when the source holds none (see "Changed
+  2026-11-26"); whether that can happen is not confirmed.
 
 ## Why not the alternatives
 
@@ -212,10 +217,14 @@ The time zone and clock questions are settled (see "Changed 2026-11-26: delta an
 - Migration `0012` adds `migration_state`; nothing else in the schema changes.
 - Open: the two inputs of point 11.
 
-## Changed 2026-11-26: copy fidelity
+## Changed 2026-11-26
 
-A correctness review of the tool found records the copy took differently from the old service or the app. Fixed, and
-recorded above:
+A correctness review of the tool found records the copy took differently from the old service or the app, ways a
+misconfigured source could make it copy nothing or delete data, changes `delta` and `reconcile` missed, ways `verify`
+reported green while the target differed or red for nothing, and a rule for public answers that was too open. Each is
+fixed and recorded above in its point; the changes are kept here, by area.
+
+### Copy and mapping
 
 - **Point 2, another sample:** the guard looked at checkpoints, so a sample run stopped before its first checkpoint (its
   profiles, keys, projects and some surveys already written) let another sample through. A copy now records its sample
@@ -223,22 +232,22 @@ recorded above:
 - **Point 3, files:** editor asset links through the old API's `/private/v1/Surveys/files` route are found too, as are
   links in any letter case and with `name` anywhere in the query string.
 - **Point 5, members:** a member's update time is the latest change time of its rows, as the mapping says, not the
-  latest join or role-change time.
+  latest join or role-change time (a row without one: its join time, then the epoch).
 - **Point 7, the sample:** it took any member row as membership, whatever its role, while the copy keeps only admin
   and user rows; both now use the copy's rule. The copy keeps copying the keys of named people outside the sample, now
   written down.
-- **Point 8, history:** the published snapshot was never read, so it was never copied and `verify` agreed. It is now
-  an entry at its own time (its last change), by nobody, kept only when that time puts it among the 20 newest; `delta`
-  takes one changed after the marks, and both `verify` history checks expect it.
 - **Point 8, rows:** responses took their id from a field of the row rather than its key, and a row without a time got
   the change time instead of being skipped; deletion copies and events did the same. Events kept the respondent
   address of older rows and upper-case ids in their payload. Completion markers with a flag of another type were not
   reported. Each is now as point 8 says, and the report counts the skipped and re-keyed rows.
 
-## Changed 2026-11-26: source safety and the command line
+### The published snapshot
 
-The same review found ways a misconfigured source could make the tool copy nothing, read the wrong stores, or delete
-data, and some command-line gaps. Fixed, and recorded here (point 2 and point 6 read with these):
+- **Point 8, history:** the published snapshot was never read, so it was never copied and `verify` agreed. It is now
+  an entry at its own time (its last change), by nobody, kept only when that time puts it among the 20 newest; `delta`
+  takes one changed after the marks, and both `verify` history checks expect it.
+
+### Source safety and the command line
 
 - **Every store answers, or the command refuses.** Opening a remote source first checks that both file shares can be
   listed, and opening any source that the containers and the event table every source holds exist and the results
@@ -268,10 +277,7 @@ data, and some command-line gaps. Fixed, and recorded here (point 2 and point 6 
 - **`migrate-hosted` without the tool:** an image without `server/src/migrate` refuses the command (exit 2) whatever
   `APP_EDITION` says, rather than failing on the missing module.
 
-## Changed 2026-11-26: delta and reconcile
-
-The same review found changes `delta` and `reconcile` missed, things `reconcile` deleted wrongly, and a moment where a
-survey's answers were less private than the rule says. Fixed, and recorded here (point 2 and point 11 read with these):
+### Delta and reconcile
 
 - **Completion markers of deleted responses.** The old app deletes a response's completion marker with it, which leaves
   no change time, and `reconcile` compared markers only after a delete-all. It now compares the marker keys with the
@@ -301,10 +307,7 @@ survey's answers were less private than the rule says. Fixed, and recorded here 
   change-time columns and the SQL server's offset from UTC, and print them; `copy` refuses (exit 2) when a default takes
   the server's local time and the server is not on UTC.
 
-## Changed 2026-11-26: verify as the go/no-go
-
-The same review found ways `verify` reported green while the target differed, and ways it turned red for nothing and
-would have blocked the window. Fixed, and recorded here (point 6 reads with these):
+### Verify as the go/no-go
 
 - **Deletions after the marks are pending, by their dated traces.** The day-before full verify runs for hours while the
   old service is live, after that day's `delta` and `reconcile`; every deletion in that time was a difference. A target
@@ -343,7 +346,7 @@ would have blocked the window. Fixed, and recorded here (point 6 reads with thes
   its storage time, and noted (`deleted_copy_undated`): the deleted response's answers are kept nowhere else (point 8).
   `copy`, `delta`, `reconcile` and `verify` take it alike.
 
-## Changed 2026-11-26: the privacy rule
+### The privacy rule
 
 Point 4 took the union of the two settings. The old public results did not: with a column layout listing columns and a
 permissions setting, only the answers the permissions marked public that the layout also lists were public, and
@@ -359,7 +362,13 @@ survey whose public results are on and end with no public answer under this case
 (`public_results_no_public_answer`, the survey id only), so the operator can tell its owner. The rule is one function
 of the column-layout package, shared by `copy`, `delta`, `reconcile` and `verify`, so `verify` cannot disagree with
 what the copy writes. Without a layout, a permissions list still hides its private entries, though the old public
-results then hid nothing: stricter, as before.
+results then hid nothing: stricter, as before. The report applies to this case (a layout listing columns and a
+permissions list) only, and can over-report: it cannot tell a list Studio wrote from a list the owner set.
+
+Malformed permission lists are read more strictly than the old service read them: an `isPublic` that is not a Boolean
+(the text "true", say), and a name with both a true and a false entry, make the answer private. The old service
+would have accepted such a list; failing closed costs at most an answer that stays hidden until the owner publishes it
+again.
 
 Studio on the old stores applies the same function since 2026-11-26 and now saves the permissions in the old service's
 full form, so a list Studio writes from then on keeps the owner's public questions public ([ADR 0016](0016-results-details-exports-and-public-results.md#changed-2026-11-26-public-results-on-the-old-stores)).

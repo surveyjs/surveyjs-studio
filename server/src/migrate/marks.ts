@@ -12,7 +12,7 @@ import type { ChangeTimeDefaults, SqlTable } from "./source/sql.js";
  * clock a little behind, is read again rather than missed.
  */
 export interface HighWaterMarks {
-  /** The tool's clock when the marks were taken (for the operator; nothing is judged by it). */
+  /** The tool's clock when the marks were taken (for the operator; verify compares it with the last reconcile's). */
   takenAt: string;
   sql: { users: string; surveys: string; organizations: string; organizationUsers: string };
   tables: string;

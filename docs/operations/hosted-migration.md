@@ -134,8 +134,11 @@ delete everything outside the new one. To copy something else into a target, `wi
    pending). Start the final `delta` at least 5 minutes after the freeze (the marks' safety margin, plus any skew of the
    old storage's clock): its marks are taken that margin back, so writes the live service made in the last minutes
    before the freeze would otherwise count as after the marks, and the `verify` would fail on them. An incremental
-   `verify` after a `delta` with no `reconcile` after it fails (the difference `reconcile`). All three pass: go. Any
-   difference: no-go, and the old side starts again ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
+   `verify` after a `delta` with no `reconcile` after it fails (the difference `reconcile`). Do not use Studio on the
+   copied surveys between the final `reconcile` and the window's `verify` (saving views, uploading files, changing
+   table layouts): what the target holds that the source lacks shows red until `reconcile` runs again. All three pass:
+   go. Any difference: no-go, and the old side starts again
+   ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
 
 Do not run two commands against one target at the same time.
 
@@ -160,8 +163,12 @@ What each phase reads, and why some cost the same whatever changed:
 | `verify`    | `stores`             | The token table and the file container (listings); the results account's table list; the event log since the last verify    |
 |             | `people`, `projects` | The user, project and member rows; the target's rows of each                                                                |
 |             | `surveys`            | Each survey's record; its responses and deletion copies since the last full verify; the changed surveys in full; counts     |
+|             |                      | The markers of every survey with a deletion copy since the baseline (a large survey with one costs its whole marker table)  |
 |             | `keys`               | Incremental: the layout, permission, view and file containers listed (small, as `reconcile`), against the target's keys     |
-| `copy`      | `surveys`            | Every survey in full, 8 at once; `events`, `views` and `files` after it                                                     |
+|             | `tables`             | Full: the events, views and files counted, and the legacy file names                                                        |
+| `copy`      | `marks`              | The marks taken (the SQL clocks and the storage services' times)                                                            |
+|             | `people`, `projects` | Every user, project and member row                                                                                          |
+|             | `surveys`            | Every survey in full, 8 at once; `events`, `views` and `files` after it                                                     |
 
 The event log and each survey's response, marker and deletion-copy tables are read by change time, and the old store
 answers such a filter with a full scan on its side: the time those scans take grows with the size of the tables, not
@@ -195,34 +202,44 @@ is corrected and a `delta` or `copy --full` runs again.
 
 ### Notes worth reading
 
-| Note                                                              | Meaning                                                                                                                           |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `person_without_email`, `person_email_conflict`                   | A person has no profile: no email, or an email equal to another's after lower-casing. Resolve on the site first                   |
-| `survey_moved_to_creator`, `survey_moved_from_memberless_project` | The survey's project is gone or has no members; it is now the creator's personal survey                                           |
-| `survey_kept_in_missing_project`                                  | No creator can take the survey: it is copied naming the missing project, visible to nobody                                        |
-| `public_results_off_unreadable_setting`                           | The hidden-questions setting or the column layout could not be read; public results are off for that survey                       |
-| `public_results_no_public_answer`                                 | Public results are on, yet the hidden-questions setting and the column layout together leave no answer public; tell the owner     |
-| `nul_replaced`                                                    | A `\u0000` in a JSON string became U+FFFD                                                                                         |
-| `definition_unreadable`, `theme_unreadable`, `view_unreadable`    | Stored text that is not a JSON object; the survey reads as an empty one, as today                                                 |
-| `future_change_time`                                              | A SQL table holds a change time later than the database's own clock; the mark was capped at the clock. Ask the SurveyJS team why  |
-| `change_time_missing`                                             | A row has no change time, so `delta` reads it every time                                                                          |
-| `delta_new_survey`                                                | A survey that was created after the copy and was copied by `delta`                                                                |
-| `legacy_files_unlinked`                                           | `verify`: files the target holds that no copied record links any more (an image dropped, a response deleted). Kept, by decision   |
-| `deep_skipped_size`                                               | `verify`: a survey above `--deep-max-responses` was compared by counts and checksums, not response by response                    |
-| `reconcile_*`                                                     | `reconcile` removed rows, replaced a project's members, or maps a survey again (`reconcile_remapped_survey`)                      |
-| `reconcile_response_copied_again`                                 | A response a deletion copy names that the source holds again (posted again, same id): kept, and copied back                       |
-| `reconcile_count_skipped_size`                                    | `reconcile` did not count the responses of a very large survey inside the window                                                  |
-| `person_kept_unseeded`                                            | `reconcile` kept, and `verify` found, an account the migration did not create (an administrator, an account made at sign-in)      |
-| `person_held_elsewhere`                                           | `verify`: a named person the copy could not write, because another account holds the email or the surveyjs.io sign-in             |
-| `person_used`                                                     | `verify`: a profile somebody has used since the copy; only what the migration owns (id, email, name, block flag, sign-in) is read |
-| `private_questions_superset`                                      | `verify`: the stored private questions keep a name that only responses deleted since used. Safe: nothing is more public           |
-| `deleted_copy_undated`                                            | A deletion copy holds no deletion time: it is kept, deleted at the time the old storage stamped it                                |
+| Note                                                              | Meaning                                                                                                                                                                                                  |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `person_without_email`, `person_email_conflict`                   | A person has no profile: no email, or an email equal to another's after lower-casing. Resolve on the site first                                                                                          |
+| `survey_moved_to_creator`, `survey_moved_from_memberless_project` | The survey's project is gone or has no members; it is now the creator's personal survey                                                                                                                  |
+| `survey_kept_in_missing_project`                                  | No creator can take the survey: it is copied naming the missing project, visible to nobody                                                                                                               |
+| `public_results_off_unreadable_setting`                           | The hidden-questions setting or the column layout could not be read; public results are off for that survey                                                                                              |
+| `public_results_no_public_answer`                                 | Public results are on, yet the hidden-questions setting and the column layout together leave no answer public (that case only; it can over-report, as it cannot tell Studio's own lists); tell the owner |
+| `nul_replaced`                                                    | A `\u0000` in a JSON string became U+FFFD                                                                                                                                                                |
+| `definition_unreadable`, `theme_unreadable`, `view_unreadable`    | Stored text that is not a JSON object; the survey reads as an empty one, as today                                                                                                                        |
+| `future_change_time`                                              | A SQL table holds a change time later than the database's own clock; the mark was capped at the clock. Ask the SurveyJS team why                                                                         |
+| `change_time_missing`                                             | A row has no change time, so `delta` reads it every time                                                                                                                                                 |
+| `delta_new_survey`                                                | A survey that was created after the copy and was copied by `delta`                                                                                                                                       |
+| `legacy_files_unlinked`                                           | `verify`: files the target holds that no copied record links any more (an image dropped, a response deleted). Kept, by decision                                                                          |
+| `deep_skipped_size`                                               | `verify`: a survey above `--deep-max-responses` was compared by counts and checksums, not response by response                                                                                           |
+| `reconcile_*`                                                     | What `reconcile` removed, replaced, kept or mapped again; `reconcile_missing_responses` names a survey short of responses                                                                                |
+| `member_role_unknown`                                             | A member row has a role the app does not know: no member is made of it                                                                                                                                   |
+| `response_id_differs`, `event_id_differs`                         | A stored row's own id field differs from the key it is stored under; the key is taken, as the old service reads it                                                                                       |
+| `marker_partial_not_boolean`                                      | A completion marker's partial flag is not a Boolean; it is copied as complete                                                                                                                            |
+| `sample_include_unknown`                                          | An account in the `--include` file is not a user of the source                                                                                                                                           |
+| `reconcile_response_copied_again`                                 | A response a deletion copy names that the source holds again (posted again, same id): kept, and copied back                                                                                              |
+| `reconcile_count_skipped_size`                                    | `reconcile` did not count the responses of a very large survey inside the window                                                                                                                         |
+| `person_kept_unseeded`                                            | `reconcile` kept, and `verify` found, an account the migration did not create (an administrator, an account made at sign-in)                                                                             |
+| `person_held_elsewhere`                                           | `verify`: a named person the copy could not write, because another account holds the email or the surveyjs.io sign-in                                                                                    |
+| `person_used`                                                     | `verify`: a profile somebody has used since the copy; only what the migration owns (id, email, name, block flag, sign-in) is read                                                                        |
+| `private_questions_superset`                                      | `verify`: the stored private questions keep a name that only responses deleted since used. Safe: nothing is more public                                                                                  |
+| `deleted_copy_undated`                                            | A deletion copy holds no deletion time: it is kept, deleted at the time the old storage stamped it                                                                                                       |
 
 ## Reading a `verify`
 
 `verify` writes `verify: OK` or `verify: FAILED`, then `<n> differences, <m> pending`, and exits 0 or 1. With
 `--no-pending` a pending item fails the run as a difference does.
 
+- **The checks** named in the report: `marks` (no copy has taken marks yet), `full_verify` (no green full run to build
+  on), `reconcile` (a `delta` after the last `reconcile`), the record checks (`surveys`, `definitions`, `themes`,
+  `history`, `layouts`, `permissions`, `private_questions`, `views`, `own_files`, `legacy_files`, `legacy_file_count`,
+  `people`, `projects`, `members`, `identities`, `keys`), the response checks (`response_counts`, `responses`,
+  `new_responses`, `deletions`), the deep ones (`deep_surveys`, `deep_history`, `deep_layouts`) and the two for what the
+  copy does not take (`not_copied_api_tokens`, `not_copied_user_files`).
 - **A difference** means the target does not match the source as of the high-water marks. Any difference is a no-go:
   find the cause (the ids are in the report), correct it, and run `delta` or `copy --full` and `verify` again. Never
   start the window with a known difference.
@@ -298,6 +315,9 @@ Before the real runs:
 1. **The real column list of the old SQL tables.** Run `pnpm inspect:legacy-schema` against the real database, read
    only, and compare it with what the mapping expects.
 2. **Read-only credentials:** a read-only SQL login; storage and file shares with read and list only.
+
+3. **Can the site clear a user's access key?** `delta` removes the stored key of a person whose source row holds none.
+   Whether that can happen is open: a key the target kept would stay valid after the cutover.
 
 Settled (2026-11-26): the old stores set their change times themselves (the database, the storage service), not the
 servers that write to them, so each store has one clock and the marks follow it; local times are read as UTC. `plan`
