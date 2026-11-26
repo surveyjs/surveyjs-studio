@@ -4,7 +4,7 @@ Status: Accepted (hosted Step 9, 2026-11-25). Settles how the data of today's se
 the order set by [ADR 0042](0042-one-switch-to-the-new-server.md). Changes [ADR 0037](0037-access-keys-and-api-tokens.md)
 point 4 (revocations), [ADR 0043](0043-hosted-users-on-the-local-directory.md) point 6 (who is seeded, what `reconcile` removes) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and
 the operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md). Changed
-2026-11-26: copy fidelity (points 2, 3, 5, 7 and 8; see the end).
+2026-11-26: copy fidelity (points 2, 3, 5, 7 and 8), and verify as the go/no-go (point 6); see the end.
 
 ## Context
 
@@ -114,8 +114,9 @@ reported; the owner can turn them on again. The layout itself is kept, with the 
 ### 6. What "go" means
 
 `verify` compares through both providers' domain reads, as of the high-water marks. A source record that changed after
-the marks is listed as **pending**, never as a difference; the next `delta` copies it. Any difference makes the run red
-(exit 1). There are two modes:
+the marks is listed as **pending**, never as a difference; the next `delta` copies it. So is a deletion after the marks
+(see "Changed 2026-11-26: verify as the go/no-go" for which). Any difference makes the run red (exit 1). There are two
+modes:
 
 - **Full** (`--full`), the day before the window, after a daily `delta` and `reconcile`: every survey's record,
   definition, theme, history, layouts, private questions and response counts (complete and all rows); every table by
@@ -134,7 +135,7 @@ used is accepted and noted (it hides more, never less).
 
 Two changes only the full verify sees: a delete-all of a survey's responses whose best-effort audit event is missing
 (`reconcile` and the incremental verify find deletions by their copies and that event), and a key changed on the site
-without a change time (`delta` reads by change time; `copy` writes every key again).
+without a change time (`delta` reads by change time; `copy` writes every key again; both verifies compare every key).
 
 Both modes flag what the copy does not take (point 9).
 
@@ -159,10 +160,10 @@ a full copy would hold them. `plan --sample` also writes the sample's survey ids
 - **A `\u0000` inside a JSON string** becomes U+FFFD on both dialects and is reported by id. A BOM is removed. Text that
   is not a JSON object is reported and skipped.
 - **Rows are read as the app reads them:** a response's id is the key the old service stored the row under (a row
-  whose own id field differs is reported), and a response, deletion copy or event without a stored time is skipped and
-  reported. A completion marker whose partial flag is not a Boolean is copied as complete and reported.
+  whose own id field differs is reported), and a response or event without a stored time is skipped and reported. A
+  completion marker whose partial flag is not a Boolean is copied as complete and reported.
 - **Deleted responses** keep the answers, client id, partial flag and respondent address as one JSON object, with the
-  deletion time of the copy. Events keep their ids, types, times and payload text, without the respondent address older
+  deletion time of the copy; a copy without one is kept at its storage time, and noted. Events keep their ids, types, times and payload text, without the respondent address older
   rows carry; the ids in the payload are lower-cased.
 - **Local times** written without a zone (survey created, project and member times) are read as UTC.
 - **An id that is not a GUID** is skipped and reported, never a crash. Completion markers keep their client id as stored.
@@ -294,3 +295,41 @@ survey's answers were less private than the rule says. Fixed, and recorded here 
   stay read as UTC. One assumption is left and guarded: `plan` and `copy` read, read only, the defaults of the SQL
   change-time columns and the SQL server's offset from UTC, and print them; `copy` refuses (exit 2) when a default takes
   the server's local time and the server is not on UTC.
+
+## Changed 2026-11-26: verify as the go/no-go
+
+The same review found ways `verify` reported green while the target differed, and ways it turned red for nothing and
+would have blocked the window. Fixed, and recorded here (point 6 reads with these):
+
+- **Deletions after the marks are pending, by their dated traces.** The day-before full verify runs for hours while the
+  old service is live, after that day's `delta` and `reconcile`; every deletion in that time was a difference. A target
+  item the source lacks is now pending when the source holds a dated trace of its deletion after the marks: the
+  survey-delete or delete-all event (the survey's record, rows, markers and the views and files of a deleted survey), a
+  deletion copy (the response, and the completion marker of its client, which the old app deletes with it). The
+  traces are judged by their storage times, the clock of the marks, not by the time they hold (their writer's).
+- **What the old app deletes without a trace,** in a full verify only: a layout or permissions blob, a member, a
+  project, a saved view or Studio's own file, and what follows from them (a survey moved off a project gone, a person
+  no longer named). Such an item the source lacks is pending when the last `reconcile` ran after the marks: that
+  `reconcile` compared the full key sets and kept the item, so it was deleted since. Without such a `reconcile` it
+  stays a difference (one is due).
+- **The window stays strict.** Its verify is incremental and runs after the final `delta` and `reconcile`, with the
+  old service frozen before the marks: no dated trace can come after them, the trace-less rule above does not apply
+  to the incremental verify, and `--no-pending` fails any pending item. A deletion `reconcile` missed is red there.
+  An incremental verify after a `delta` with no `reconcile` after it is a difference (`reconcile`): deletions since
+  the last `reconcile` are not applied.
+- **The incremental verify sees a delete-all.** It read deletions only by their copies, and a delete-all writes none:
+  green while the target served every deleted response. It now reads the delete-all events since the last full verify
+  and counts those surveys' responses and completion markers, and counts the markers of every survey with a deletion
+  copy since.
+- **A full verify forgets the last green one when it starts,** so an incremental verify never builds on an older green
+  run after a red one; it refuses without one. A full verify whose only remaining items are pending is green and
+  becomes the baseline.
+- **Smaller gaps.** A response deleted twice (a retried delete leaves two copies) counted twice against one target row.
+  Keys were compared by their last four: a key changed to another with the same last four stayed green; each source
+  key is now looked up by its hash, as the target's credentials do. The incremental private-question check fed the rule
+  the target's own list; it now uses the checkpoint's answer names, as `delta` does. The deep walk compared only the
+  responses runs fold into, so a partial save's value a later save overwrote never showed; it now also compares each
+  run's rows, and a row changed after the marks makes only its own run pending, not every run of its client.
+- **A deletion copy without a time,** which the copy-fidelity change made the copy skip, is kept instead, deleted at
+  its storage time, and noted (`deleted_copy_undated`): the deleted response's answers are kept nowhere else (point 8).
+  `copy`, `delta`, `reconcile` and `verify` take it alike.

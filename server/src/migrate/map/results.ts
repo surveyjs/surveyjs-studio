@@ -6,7 +6,7 @@ import {
 } from "../../providers/azure-legacy/mapping.js";
 import { historyOrder } from "../../providers/ordering.js";
 import type { DeletedRec, HistoryRec, MarkerRec, ResponseRec } from "../records.js";
-import type { ResultRow } from "../source/tables.js";
+import type { DeletionCopy, ResultRow } from "../source/tables.js";
 import type { Report } from "./report.js";
 import { objectOf, withoutBom, withoutNul } from "./text.js";
 
@@ -66,21 +66,25 @@ export function mapResponse(
 
 /**
  * A deleted-response copy: answers, client id, partial flag and IP in one JSON object, deleted at
- * the copy's time (a copy without one is skipped and reported).
+ * the copy's time. A copy without one is kept, deleted at its storage time, and noted
+ * (`deleted_copy_undated`): the deleted response's answers are kept nowhere else.
  */
 export function mapDeleted(
   surveyId: string,
-  copy: { responseId: string; deletedAt: Date | null; entity: ResultRow },
+  copy: DeletionCopy,
   report: Report,
 ): DeletedRec | null {
   const id = surveyId.toLowerCase();
   const response = readResponse(
     "deleted_response",
     id,
-    { ...copy.entity, id: copy.responseId, happendat: copy.deletedAt },
+    { ...copy.entity, id: copy.responseId, happendat: copy.deletedAt ?? copy.timestamp },
     report,
   );
   if (response === null) return null;
+  if (copy.deletedAt === null) {
+    report.note("deleted_copy_undated", { surveyId: id, responseId: response.id });
+  }
   const { data, clientId, partial, respondentIp } = response;
   return {
     surveyId: id,

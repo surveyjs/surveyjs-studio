@@ -205,15 +205,15 @@ describe("the table readers, as the app reads the rows", () => {
     ]);
   });
 
-  it("gives a deletion copy no deletion time when the row has no date", async () => {
+  it("gives a deletion copy no deletion time when the row has no date, and always its storage time", async () => {
     tables.set(`postdelete${dashless(POST)}`, [
       row(KEY_1, { instanceid: guid(KEY_2), happendat: AT, result: "{}" }),
       row(KEY_3, { instanceid: guid(KEY_3), result: "{}" }),
     ]);
     const copies = await collect(source().deletedCopies(POST));
-    expect(copies.map((c) => [c.responseId, c.deletedAt])).toEqual([
-      [KEY_2, AT],
-      [KEY_3, null],
+    expect(copies.map((c) => [c.responseId, c.deletedAt, c.timestamp])).toEqual([
+      [KEY_2, AT, STAMP],
+      [KEY_3, null, STAMP],
     ]);
   });
 

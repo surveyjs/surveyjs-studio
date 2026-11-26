@@ -95,6 +95,7 @@ describe("mapDeleted", () => {
     const copy = {
       responseId: R,
       deletedAt: new Date("2026-04-01T00:00:00.000Z"),
+      timestamp: new Date("2026-04-01T00:00:01.000Z"),
       entity: entity('{"q":1}', { clientid: "c", ipaddress: "1.2.3.4", ispartialcompleted: false }),
     };
     const rec = mapDeleted(S, copy, createReport());
@@ -119,18 +120,33 @@ describe("mapDeleted", () => {
 
   it("skips a copy that is unreadable or has no GUID id", () => {
     const report = createReport();
-    const bad = { responseId: R, deletedAt: new Date(0), entity: entity("zzz") };
+    const bad = {
+      responseId: R,
+      deletedAt: new Date(0),
+      timestamp: new Date(0),
+      entity: entity("zzz"),
+    };
     expect(mapDeleted(S, bad, report)).toBeNull();
     expect(mapDeleted(S, { ...bad, responseId: "x", entity: entity("{}") }, report)).toBeNull();
     expect(report.counts()).toEqual({ "skipped:deleted_response": 2 });
   });
 
-  it("skips and reports a copy whose deletion time is not a date", () => {
+  it("keeps a copy whose deletion time is not a date, deleted at its storage time, and notes it", () => {
     const report = createReport();
-    const copy = { responseId: R, deletedAt: null, entity: entity("{}") };
-    expect(mapDeleted(S, copy, report)).toBeNull();
+    const timestamp = new Date("2026-04-02T03:04:05.006Z");
+    const copy = { responseId: R, deletedAt: null, timestamp, entity: entity("{}") };
+    expect(mapDeleted(S, copy, report)).toMatchObject({
+      responseId: R.toLowerCase(),
+      deletedAt: "2026-04-02T03:04:05.006Z",
+    });
     expect(report.toJSON()).toMatchObject({
-      skipped: [{ entity: "deleted_response", reason: "the time is not a date" }],
+      skipped: [],
+      notes: [
+        {
+          kind: "deleted_copy_undated",
+          ids: { surveyId: S.toLowerCase(), responseId: R.toLowerCase() },
+        },
+      ],
     });
   });
 });

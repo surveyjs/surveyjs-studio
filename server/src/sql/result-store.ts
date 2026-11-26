@@ -18,7 +18,8 @@ const RESPONSE_COLUMNS = [
 
 type ResponseRow = Pick<Selectable<SurveyResponsesTable>, (typeof RESPONSE_COLUMNS)[number]>;
 
-const responseOf = (row: ResponseRow): SurveyResponse => ({
+/** A stored row as the store reads it (the migration tool's `verify` reads rows unfolded). */
+export const responseOf = (row: ResponseRow): SurveyResponse => ({
   id: row.id,
   submittedAt: isoOf(row.submitted_at),
   data: jsonOf<Record<string, unknown>>(row.data),

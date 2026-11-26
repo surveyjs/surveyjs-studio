@@ -17,6 +17,14 @@ export interface ResultRow extends Omit<LegacyResultEntity, "happendat"> {
   idProperty?: string;
 }
 
+/** A deleted-response copy: the deleted row's key, its time (if any), its storage time. */
+export interface DeletionCopy {
+  responseId: string;
+  deletedAt: Date | null;
+  timestamp: Date;
+  entity: ResultRow;
+}
+
 /** The legacy Azure Tables, read only: pages of entities, never a table in memory. */
 export interface TableSource {
   responses(postId: string, since?: Date): AsyncIterable<ResultRow & { timestamp: Date }>;
@@ -30,11 +38,11 @@ export interface TableSource {
     surveyId: string,
     since?: Date,
   ): AsyncIterable<{ clientId: string; ispartialcompleted: unknown; timestamp: Date }>;
-  /** `deletedAt`: the copy's `happendat`, null when it holds no date. */
-  deletedCopies(
-    postId: string,
-    since?: Date,
-  ): AsyncIterable<{ responseId: string; deletedAt: Date | null; entity: ResultRow }>;
+  /**
+   * `deletedAt`: the copy's `happendat`, null when it holds no date; `timestamp`: its storage
+   * change time (the clock of the marks and of `since`, which `verify` judges a copy by).
+   */
+  deletedCopies(postId: string, since?: Date): AsyncIterable<DeletionCopy>;
   /** An event keyed by its row key (as the app writes it); `at` null when it holds no date. */
   events(since?: Date): AsyncIterable<{
     id: string;
@@ -216,7 +224,8 @@ export function openTableSource(config: {
         // The copy's `instanceid` is the deleted row's key; its time is the deletion time.
         const responseId = stringOf(row.instanceid) ?? "";
         const entity = resultRow(row, responseId);
-        yield { responseId, deletedAt: entity.happendat, entity };
+        const timestamp = dateOf(row.timestamp) ?? EPOCH;
+        yield { responseId, deletedAt: entity.happendat, timestamp, entity };
       }
     },
     async *events(since) {

@@ -126,14 +126,16 @@ delete everything outside the new one. To copy something else into a target, `wi
 2. **Pre-copy,** days before the window, the old service live: `copy` on the real target. It takes about a day.
 3. **Daily:** `delta`, then `reconcile`, until the window. Each is smaller than the one before, and each measures the
    time of the window's own runs ([Timing the window](#timing-the-window)).
-4. **The day before the window,** after that day's `delta` and `reconcile`: `verify --full`. Read the report; fix or
-   explain every difference.
+4. **The day before the window,** after that day's `delta` and then `reconcile`: `verify --full`. Read the report; fix
+   or explain every difference. The `reconcile` must come after the `delta`: only then are deletions the old app leaves
+   no trace of (a layout, a member, a saved view) made during the long run pending rather than differences.
 5. **In the window,** once the old service is stopped and today's Studio is read-only: the final `delta` (its marks are
    taken after the freeze), `reconcile`, then an incremental `verify --no-pending` (after the freeze nothing may be
    pending). Start the final `delta` at least 5 minutes after the freeze (the marks' safety margin, plus any skew of the
    old storage's clock): its marks are taken that margin back, so writes the live service made in the last minutes
-   before the freeze would otherwise count as after the marks, and the `verify` would fail on them. All three pass: go. Any difference: no-go, and the old side starts again
-   ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
+   before the freeze would otherwise count as after the marks, and the `verify` would fail on them. An incremental
+   `verify` after a `delta` with no `reconcile` after it fails (the difference `reconcile`). All three pass: go. Any
+   difference: no-go, and the old side starts again ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
 
 Do not run two commands against one target at the same time.
 
@@ -155,9 +157,9 @@ What each phase reads, and why some cost the same whatever changed:
 |             | `views`, `files`     | The view and file containers listed (small), the changed blobs read; a survey copied whole: all its views and files         |
 | `reconcile` | the first four       | `surveys`, `projects`, `remap`, `people_views_files`: the SQL rows; the layout, permission, view and file containers listed |
 |             | `responses`          | The deletion copies since the last `reconcile` (each id read once), their surveys' markers; the changed surveys counted     |
-| `verify`    | `stores`             | The token table and the file container (each a listing); the results account's table list, once                             |
+| `verify`    | `stores`             | The token table and the file container (listings); the results account's table list; the event log since the last verify    |
 |             | `people`, `projects` | The user, project and member rows; the target's rows of each                                                                |
-|             | `surveys`            | Each survey's record; its responses and deletion copies since the last full verify; the changed surveys in full             |
+|             | `surveys`            | Each survey's record; its responses and deletion copies since the last full verify; the changed surveys in full; counts     |
 | `copy`      | `surveys`            | Every survey in full, 8 at once; `events`, `views` and `files` after it                                                     |
 
 The event log and each survey's response, marker and deletion-copy tables are read by change time, and the old store
@@ -212,6 +214,7 @@ is corrected and a `delta` or `copy --full` runs again.
 | `person_held_elsewhere`                                           | `verify`: a named person the copy could not write, because another account holds the email or the surveyjs.io sign-in             |
 | `person_used`                                                     | `verify`: a profile somebody has used since the copy; only what the migration owns (id, email, name, block flag, sign-in) is read |
 | `private_questions_superset`                                      | `verify`: the stored private questions keep a name that only responses deleted since used. Safe: nothing is more public           |
+| `deleted_copy_undated`                                            | A deletion copy holds no deletion time: it is kept, deleted at the time the old storage stamped it                                |
 
 ## Reading a `verify`
 
@@ -227,6 +230,18 @@ is corrected and a `delta` or `copy --full` runs again.
   `--no-pending`, so one fails it. The marks are taken 5 minutes back of the source's clocks, so the final `delta` must
   start at least that long after the freeze; when only pending items fail the run, it prints the marks' times and this
   rule.
+- **Deletions after the marks are pending too,** when the old service left a dated trace after the marks: a survey's
+  deletion event (its record, and the views and files the target still holds of it), a delete-all event (the survey's
+  response and marker counts), a deletion copy (the response, and its client's completion marker, which goes with it).
+  The full `verify` also counts as pending what the old app deletes without a trace (a layout or permissions blob, a
+  member, a project, a saved view or file, a person no longer named) when the last `reconcile` ran after the marks; that
+  is why the day-before run follows a `reconcile`. Without one, those are differences. The incremental `verify` never
+  takes that rule: in the window the old service is frozen, so such an item is a deletion `reconcile` missed.
+- **`reconcile`:** the incremental `verify` reports this difference when a `delta` ran after the last `reconcile`: the
+  deletions since are not applied. Run `reconcile`, then `verify` again.
+- **`full_verify`:** the incremental `verify` builds on the last full one that ended with no difference (pending items
+  allowed). A full `verify` forgets it when it starts, so after a red full run the incremental one reports
+  `full_verify` until a full run passes.
 - **People:** an account the migration did not create (an administrator, an account made at sign-in) is noted, not a
   difference; so is a person the copy could not write because the target holds their email or sign-in. Of a profile
   somebody has used since the copy, only what the migration owns is compared. A profile the migration created that the
@@ -236,9 +251,10 @@ is corrected and a `delta` or `copy --full` runs again.
   a kind of data this tool does not know: stop and find out.
 - **A full `verify` is exact on the rows that existed before the marks.** The incremental one does not recount every
   response (the old store cannot count rows without reading them); it compares what changed since the last full verify.
-- **What only the full `verify` sees.** When the old app deletes every response of a survey and its audit event is
-  missing (the app writes it last, on a best-effort basis), neither `reconcile` nor the incremental `verify` notices;
-  the full `verify` counts the rows and does. A key changed or cleared on the site is taken by `delta` when the
+- **What only the full `verify` sees.** When the old app deletes every response of a survey, the incremental `verify`
+  counts that survey's responses and markers by the audit event; when the event is missing (the app writes it last, on
+  a best-effort basis), neither `reconcile` nor the incremental `verify` notices; the full `verify` counts the rows and
+  does. A key changed or cleared on the site is taken by `delta` when the
   person's change time moves; one changed without a change time is not read by `delta`: `verify` compares every key
   and reports it, and `copy` (or `copy --full`) writes it again.
 

@@ -10,7 +10,9 @@ import { sql, type Kysely } from "kysely";
 import type { ByteStore } from "../bytes/types.js";
 import { GUID } from "../domain/guid.js";
 import type { SqlDatabase } from "../sql/database.js";
-import type { LayoutKind, SurveyOwner } from "../domain/types.js";
+import type { LayoutKind, SurveyOwner, SurveyResponse } from "../domain/types.js";
+import type { ResponsePosition } from "../providers/types.js";
+import { responseOf, responsePageQuery } from "../sql/result-store.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import { columnsOf, deleteSurveyRows, versionOf } from "../sql/survey-store.js";
 import { flagOf, isoOf, jsonOf, jsonText } from "../sql/values.js";
@@ -69,6 +71,15 @@ export interface MigrationTarget {
   projectMembers(): Promise<{ projectId: string; userId: string; role: string }[]>;
   /** `verify`: the partial flag of each of the survey's responses among `ids` that it holds. */
   responseStates(surveyId: string, ids: readonly string[]): Promise<Map<string, boolean>>;
+  /**
+   * `verify`'s deep walk: up to `limit` of the survey's stored rows after `after`, in submission
+   * order, each as stored (unfolded: not the runs the app reads them as).
+   */
+  responseRowPage(
+    surveyId: string,
+    after: ResponsePosition | undefined,
+    limit: number,
+  ): Promise<SurveyResponse[]>;
   /**
    * `verify`: why `upsertPeople` would not write this person: another account holds the email,
    * or the person's `surveyjs` identity is linked to another account; null when neither.
@@ -329,6 +340,12 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
         for (const row of rows) found.add(row.k);
       }
       return [...found];
+    },
+
+    async responseRowPage(surveyId, after, limit) {
+      const id = guid(surveyId, "A survey id");
+      const rows = await responsePageQuery(db, id, after, limit).execute();
+      return rows.map(responseOf);
     },
 
     async responseStates(surveyId, ids) {

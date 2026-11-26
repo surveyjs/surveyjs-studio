@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { hashCredential } from "../credentials/format.js";
 import { newFileId } from "../domain/file-id.js";
 import { localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig } from "../legacy/replica-env.js";
@@ -15,8 +17,11 @@ import { API_TOKENS_TABLE } from "../providers/azure-legacy/writes.js";
 import { LEGACY_ASSET_NAME, OUTSIDER_ID, OWNER_ID } from "../providers/suite/expected.js";
 import type { ProviderSet } from "../providers/types.js";
 import { jsonText } from "../sql/values.js";
-import { runDelta } from "./delta.js";
+import { runCopy } from "./copy.js";
+import { DELETE_ALL_EVENT, runDelta } from "./delta.js";
 import { createReport } from "./map/report.js";
+import { mapResponse } from "./map/results.js";
+import type { HighWaterMarks } from "./marks.js";
 import { runReconcile } from "./reconcile.js";
 import {
   copyFromReplica,
@@ -28,6 +33,7 @@ import {
 } from "./replica-setup.js";
 import { selectSample, type SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
+import type { ResultRow } from "./source/tables.js";
 import { Refused } from "./state.js";
 import { runVerify } from "./verify.js";
 
@@ -42,10 +48,16 @@ const OLD_POLL_PUBLISH_ID = "dddddddd-0000-4000-8000-a00000000001";
 const CAMPAIGN = "22222222-0000-4000-8000-a00000000004";
 const FEEDBACK_TABLE = "post33333333000040008000a00000000001";
 const CAMPAIGN_TABLE = "post33333333000040008000a00000000004";
+const FEEDBACK_POST = "33333333-0000-4000-8000-a00000000001";
+const CAMPAIGN_POST = "33333333-0000-4000-8000-a00000000004";
+/** The Marketing project, and a member of it who is in no other project. */
+const MARKETING = "55555555-0000-4000-8000-a00000000001";
+const MARKETING_MEMBER = "11111111-0000-4000-8000-a00000000003";
 
 interface Finding {
   check: string;
   ids: Record<string, string>;
+  counts?: Record<string, number>;
 }
 interface VerifyJson {
   notes: { kind: string; ids: Record<string, string> }[];
@@ -57,6 +69,8 @@ interface VerifyJson {
 
 let fixtures: LegacyFixtures;
 let copied: Target;
+/** The marks the copy took: tests that move the marks put the copy's back. */
+let copyMarks: HighWaterMarks;
 let legacy: ProviderSet;
 let migrated: ProviderSet;
 const blobs = BlobServiceClient.fromConnectionString(config.surveysStorageConnectionString);
@@ -126,6 +140,63 @@ async function verify(
 }
 
 const findings = (list: Finding[], check: string) => list.filter((f) => f.check === check);
+const ofSurvey = (list: Finding[], surveyId: string) =>
+  list.filter((f) => f.ids.surveyId === surveyId);
+
+/** A green full verify's record as of `marks` (default: the stored ones), as `verify --full` keeps it. */
+async function setBaseline(marks?: HighWaterMarks): Promise<void> {
+  const at = new Date().toISOString();
+  const as = marks ?? (await copied.target.state.get<HighWaterMarks>("marks"))!;
+  await copied.target.state.set("verify:full", { at, marks: as, sample: false }, at);
+}
+
+/** Runs `work`, then puts back the marks, the reconcile record and the full verify's record. */
+async function keepingState(work: () => Promise<void>): Promise<void> {
+  const keys = ["marks", "reconcile", "verify:full"];
+  const saved = await Promise.all(keys.map((key) => copied.target.state.get(key)));
+  try {
+    await work();
+  } finally {
+    const at = new Date().toISOString();
+    for (const [i, key] of keys.entries()) {
+      if (saved[i] === null) await copied.target.state.delete(key);
+      else await copied.target.state.set(key, saved[i], at);
+    }
+  }
+}
+
+/** A source whose event table also holds `event`, stamped (and dated) `at`. */
+const withEvent =
+  (surveyId: string, type: string, at: Date) =>
+  (source: LegacySource): LegacySource => ({
+    ...source,
+    async *events(since) {
+      yield* source.events(since);
+      if (since === undefined || at > since) {
+        yield { id: randomUUID(), surveyId, type, at, rest: {}, timestamp: at };
+      }
+    },
+  });
+
+/** A source in which every response and completion marker of the survey is gone. */
+const allDeleted =
+  (surveyId: string, postId: string) =>
+  (source: LegacySource): LegacySource => ({
+    ...source,
+    async *responses(post, since) {
+      if (post.toLowerCase() === postId) return;
+      yield* source.responses(post, since);
+    },
+    async *markers(survey, since) {
+      if (survey.toLowerCase() === surveyId) return;
+      yield* source.markers(survey, since);
+    },
+  });
+
+const both =
+  (...wraps: ((source: LegacySource) => LegacySource)[]) =>
+  (source: LegacySource): LegacySource =>
+    wraps.reduce((wrapped, wrap) => wrap(wrapped), source);
 
 /** Every string among the fixtures' answers (and the generated survey's), as stored. */
 function answerTexts(): string[] {
@@ -188,6 +259,7 @@ beforeAll(async () => {
   // after them.
   await copyFromReplica(copied, fixtures, { marginMs: 0 });
   migrated = targetProviders(copied);
+  copyMarks = (await copied.target.state.get<HighWaterMarks>("marks"))!;
 });
 
 afterAll(async () => {
@@ -353,6 +425,7 @@ describe("verify against a copy of the local replica", () => {
   });
 
   it("is green incrementally after a full verify, and refuses without one", async () => {
+    expect((await verify({ deepSample: 0 })).ok).toBe(true);
     expect((await verify({ full: false })).ok).toBe(true);
     const stored = await copied.target.state.get("verify:full");
     expect(stored).not.toBeNull();
@@ -363,6 +436,27 @@ describe("verify against a copy of the local replica", () => {
       expect(findings(json.differences, "full_verify")).toHaveLength(1);
     } finally {
       await copied.target.state.set("verify:full", stored, new Date().toISOString());
+    }
+  });
+
+  it("forgets the last green full verify when a full verify starts: after a red one the incremental refuses", async () => {
+    await setBaseline();
+    const db = copied.database.db;
+    const { name } = await db
+      .selectFrom("surveys")
+      .select("name")
+      .where("id", "=", CAMPAIGN)
+      .executeTakeFirstOrThrow();
+    await db.updateTable("surveys").set({ name: "renamed" }).where("id", "=", CAMPAIGN).execute();
+    try {
+      expect((await verify({ deepSample: 0 })).ok).toBe(false);
+      expect(await copied.target.state.get("verify:full")).toBeNull();
+      const { ok, json } = await verify({ full: false });
+      expect(ok).toBe(false);
+      expect(findings(json.differences, "full_verify")).toHaveLength(1);
+    } finally {
+      await db.updateTable("surveys").set({ name }).where("id", "=", CAMPAIGN).execute();
+      await setBaseline();
     }
   });
 
@@ -472,6 +566,7 @@ describe("verify against a copy of the local replica", () => {
   });
 
   it("compares the small tables in full incrementally: a renamed survey is red", async () => {
+    await setBaseline();
     const db = copied.database.db;
     const { name } = await db
       .selectFrom("surveys")
@@ -491,6 +586,7 @@ describe("verify against a copy of the local replica", () => {
   });
 
   it("compares a survey changed since the last full verify in full; after the marks it is pending", async () => {
+    await setBaseline();
     const marks = await copied.target.state.get<{ takenAt: string }>("marks");
     await blobs.getContainerClient("surveyresulttablestate").createIfNotExists();
     const layout = blobs.getContainerClient("surveyresulttablestate").getBlockBlobClient(CAMPAIGN);
@@ -693,6 +789,7 @@ describe("verify against a copy of the local replica", () => {
   }
 
   it("is red incrementally for a response deleted in the source since the full verify but kept in the target", async () => {
+    await setBaseline();
     const name = "postdelete33333333000040008000a00000000004";
     const existed = fixtures.tables.some((t) => t.account === "results" && t.name === name);
     const table = localTableClient(
@@ -950,6 +1047,499 @@ describe("verify against a copy of the local replica", () => {
       expect(findings(json.differences, "not_copied_user_files")).toHaveLength(1);
     } finally {
       await files.deleteBlob(name).catch(() => undefined);
+    }
+  });
+});
+
+describe("verify as the go/no-go: deletions, pending and the window", () => {
+  const state = () => copied.target.state;
+  const checksOf = (list: Finding[]) => [...new Set(list.map((f) => f.check))].sort();
+  /** Marks a second after `at`, stored as a `delta` would leave them. */
+  async function marksAfter(at: Date | string): Promise<string> {
+    const later = new Date(new Date(at).getTime() + 1000).toISOString();
+    await state().set("marks", marksAt(later), later);
+    return later;
+  }
+  /** `reconcile` ran after the marks `marks` (its own marks a second later). */
+  async function reconciledAfter(marks: string): Promise<void> {
+    const at = new Date(Date.parse(marks) + 1000).toISOString();
+    await state().set("reconcile", { since: marksAt(at), at }, at);
+  }
+
+  it("incremental: compares a survey's responses and markers after a delete-all since the full verify, and a delta without a reconcile after it is a difference", async () => {
+    await keepingState(async () => {
+      await setBaseline(copyMarks);
+      // After the full verify the old app deletes every response of CAMPAIGN (no copies, one
+      // event); a delta then moves the marks past it.
+      const deletedAt = new Date(Date.parse(copyMarks.tables) + 1000);
+      const later = await marksAfter(deletedAt);
+      // That delta kept the copy's marks for `reconcile`, which has not run since.
+      await state().set("reconcile", { since: copyMarks }, later);
+      const wrap = both(
+        allDeleted(CAMPAIGN, CAMPAIGN_POST),
+        withEvent(CAMPAIGN, DELETE_ALL_EVENT, deletedAt),
+      );
+      const unreconciled = await verify({ full: false, wrap });
+      expect(unreconciled.ok).toBe(false);
+      expect(findings(unreconciled.json.differences, "reconcile")).toHaveLength(1);
+      expect(checksOf(ofSurvey(unreconciled.json.differences, CAMPAIGN))).toEqual([
+        "markers",
+        "response_counts",
+      ]);
+      // A reconcile ran after the delta and missed the delete-all: still red, for the survey.
+      await reconciledAfter(later);
+      const missed = await verify({ full: false, wrap });
+      expect(missed.ok).toBe(false);
+      expect(findings(missed.json.differences, "reconcile")).toEqual([]);
+      expect(checksOf(ofSurvey(missed.json.differences, CAMPAIGN))).toEqual([
+        "markers",
+        "response_counts",
+      ]);
+      // No delete-all: green.
+      const clean = await verify({ full: false });
+      expect(clean.json.differences).toEqual([]);
+      expect(clean.ok).toBe(true);
+    });
+  });
+
+  it("full: a delete-all after the marks is pending; one with no event is still a difference", async () => {
+    const deletedAt = new Date(Date.now() + 1000);
+    const { ok, json } = await verify({
+      wrap: both(
+        allDeleted(CAMPAIGN, CAMPAIGN_POST),
+        withEvent(CAMPAIGN, DELETE_ALL_EVENT, deletedAt),
+      ),
+    });
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+    for (const check of ["response_counts", "markers", "responses"]) {
+      expect(json.pending, check).toContainEqual({ check, ids: { surveyId: CAMPAIGN } });
+    }
+    // Its event missing (written last, best effort): the full verify counts the rows.
+    const silent = await verify({ deepSample: 0, wrap: allDeleted(CAMPAIGN, CAMPAIGN_POST) });
+    expect(silent.ok).toBe(false);
+    expect(checksOf(ofSurvey(silent.json.differences, CAMPAIGN))).toEqual([
+      "markers",
+      "response_counts",
+    ]);
+  });
+
+  it("full: a survey deleted in the source after the marks is pending, not a difference", async () => {
+    const deletedAt = new Date(Date.now() + 1000);
+    const deleted = (source: LegacySource): LegacySource => ({
+      ...source,
+      async *surveys(since) {
+        for await (const row of source.surveys(since)) {
+          if (row.id.toLowerCase() !== CAMPAIGN) yield row;
+        }
+      },
+      async resultTables() {
+        const tables = await source.resultTables();
+        tables.delete(CAMPAIGN_TABLE);
+        return tables;
+      },
+    });
+    const { ok, json } = await verify({
+      wrap: both(deleted, withEvent(CAMPAIGN, "SURVEY_DELETE", deletedAt)),
+    });
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+    expect(json.pending).toContainEqual({ check: "surveys", ids: { surveyId: CAMPAIGN } });
+    // With the event before the marks, the target holds a survey the source lacks.
+    const before = new Date(Date.parse(copyMarks.tables) - 60_000);
+    const old = await verify({
+      deepSample: 0,
+      wrap: both(deleted, withEvent(CAMPAIGN, "SURVEY_DELETE", before)),
+    });
+    expect(findings(old.json.differences, "surveys")).toEqual([
+      { check: "surveys", ids: { surveyId: CAMPAIGN }, counts: { inSource: 0 } },
+    ]);
+  });
+
+  it("full: a response deleted after the marks takes its completion marker with it: both pending", async () => {
+    // Response ...002 (client-0001, partial) deleted as the old app deletes one: a deletion copy
+    // stamped after the marks, the row gone, the client's completion marker deleted.
+    const responseId = "66666666-0000-4000-8000-a00000000002";
+    const deletedAt = new Date(Date.now() + 1000);
+    const deleted = (source: LegacySource): LegacySource => ({
+      ...source,
+      async *responses(postId, since) {
+        for await (const row of source.responses(postId, since)) {
+          if (row.id.toLowerCase() !== responseId) yield row;
+        }
+      },
+      async *deletedCopies(postId, since) {
+        yield* source.deletedCopies(postId, since);
+        if (postId.toLowerCase() === FEEDBACK_POST) {
+          const entity: ResultRow = {
+            id: responseId,
+            happendat: deletedAt,
+            result: '{"satisfaction":2}',
+            clientid: "client-0001",
+            ispartialcompleted: true,
+          };
+          yield { responseId, deletedAt, timestamp: deletedAt, entity };
+        }
+      },
+      async *markers(surveyId, since) {
+        for await (const marker of source.markers(surveyId, since)) {
+          if (!(surveyId.toLowerCase() === FEEDBACK && marker.clientId === "client-0001")) {
+            yield marker;
+          }
+        }
+      },
+    });
+    const { ok, json } = await verify({ wrap: deleted });
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+    expect(json.pending).toContainEqual({
+      check: "responses",
+      ids: { surveyId: FEEDBACK, responseId },
+    });
+    expect(json.pending).toContainEqual({ check: "markers", ids: { surveyId: FEEDBACK } });
+  });
+
+  describe("what the old app deletes without a trace: a view, a layout, a member", () => {
+    const traceless = (source: LegacySource): LegacySource => ({
+      ...source,
+      async *views(surveyId) {
+        for await (const view of source.views(surveyId)) {
+          if (view.userId.toLowerCase() !== VIEW_USER) yield view;
+        }
+      },
+      async layoutText(surveyId, kind) {
+        if (surveyId.toLowerCase() === FEEDBACK && kind === "table") return null;
+        return source.layoutText(surveyId, kind);
+      },
+      async *layoutNames(kind) {
+        for await (const name of source.layoutNames(kind)) {
+          if (!(kind === "table" && name.toLowerCase() === FEEDBACK)) yield name;
+        }
+      },
+      async *organizationUsers(since) {
+        for await (const row of source.organizationUsers(since)) {
+          const gone =
+            row.organizationid.toLowerCase() === MARKETING &&
+            row.userid.toLowerCase() === MARKETING_MEMBER;
+          if (!gone) yield row;
+        }
+      },
+    });
+
+    it("full: pending once a reconcile ran after the marks (the day before, the old service live)", async () => {
+      await keepingState(async () => {
+        await reconciledAfter(copyMarks.takenAt);
+        const { ok, json } = await verify({ deepSample: 0, wrap: traceless });
+        expect(json.differences).toEqual([]);
+        expect(ok).toBe(true);
+        expect(json.pending).toContainEqual({ check: "views", ids: {} });
+        expect(json.pending).toContainEqual({
+          check: "layouts",
+          ids: { surveyId: FEEDBACK, kind: "table" },
+        });
+        expect(json.pending).toContainEqual({ check: "members", ids: { projectId: MARKETING } });
+        // Only pending: the run stands as the baseline of the incremental verify.
+        expect(await state().get("verify:full")).not.toBeNull();
+      });
+    });
+
+    it("full: a difference when no reconcile ran after the marks", async () => {
+      await keepingState(async () => {
+        await state().set("reconcile", { since: copyMarks }, new Date().toISOString());
+        await marksAfter(copyMarks.takenAt);
+        const { ok, json } = await verify({ deepSample: 0, wrap: traceless });
+        expect(ok).toBe(false);
+        expect(checksOf(json.differences)).toEqual(
+          expect.arrayContaining(["layouts", "members", "views"]),
+        );
+      });
+    });
+
+    it("incremental (the window, after the final reconcile): a member the source lacks is a difference", async () => {
+      await keepingState(async () => {
+        await setBaseline(copyMarks);
+        await reconciledAfter(copyMarks.takenAt);
+        const { ok, json } = await verify({ full: false, wrap: traceless });
+        expect(ok).toBe(false);
+        expect(findings(json.differences, "members")).toEqual([
+          expect.objectContaining({ ids: { projectId: MARKETING } }),
+        ]);
+      });
+    });
+  });
+
+  it("counts a response deleted twice (two copies of it) once", async () => {
+    const twice = (source: LegacySource): LegacySource => ({
+      ...source,
+      async *deletedCopies(postId, since) {
+        for await (const copy of source.deletedCopies(postId, since)) {
+          // A retried delete: a second copy row of the same deleted row.
+          yield copy;
+          yield copy;
+        }
+      },
+    });
+    const { ok, json } = await verify({ deepSample: 0, wrap: twice });
+    expect(json.differences).toEqual([]);
+    expect(ok).toBe(true);
+  });
+
+  it("judges a deletion copy by its storage time, as the marks are taken, not by the time it holds", async () => {
+    await keepingState(async () => {
+      await setBaseline(copyMarks);
+      const responseId = fixtures.resultsByTable[CAMPAIGN_TABLE]![0]!.id.toLowerCase();
+      const stamped = new Date(Date.parse(copyMarks.tables) + 1000);
+      const later = await marksAfter(stamped);
+      await reconciledAfter(later);
+      const copyOf =
+        (deletedAt: Date, timestamp: Date) =>
+        (source: LegacySource): LegacySource => ({
+          ...source,
+          async resultTables() {
+            return (await source.resultTables()).add(`postdelete${CAMPAIGN_TABLE.slice(4)}`);
+          },
+          async *deletedCopies(postId, since) {
+            if (postId.toLowerCase() !== CAMPAIGN_POST) {
+              yield* source.deletedCopies(postId, since);
+              return;
+            }
+            const entity: ResultRow = { id: responseId, happendat: deletedAt, result: "{}" };
+            yield { responseId, deletedAt, timestamp, entity };
+          },
+        });
+      // Stored before the marks, the time it holds ahead of them (its writer's clock): the
+      // target still serving the response is a difference.
+      const ahead = await verify({
+        full: false,
+        wrap: copyOf(new Date(Date.parse(later) + 3_600_000), stamped),
+      });
+      expect(findings(ahead.json.differences, "deletions")).toEqual([
+        { check: "deletions", ids: { surveyId: CAMPAIGN }, counts: { source: 1, kept: 1 } },
+      ]);
+      // Stored after the marks, the time it holds behind them: pending.
+      const behind = await verify({
+        full: false,
+        wrap: copyOf(
+          new Date(Date.parse(copyMarks.tables) - 3_600_000),
+          new Date(Date.parse(later) + 1000),
+        ),
+      });
+      expect(behind.json.differences).toEqual([]);
+      expect(behind.json.pending).toContainEqual({
+        check: "responses",
+        ids: { surveyId: CAMPAIGN, responseId },
+      });
+    });
+  });
+
+  it("compares every key by its hash, not its last four", async () => {
+    const db = copied.database.db;
+    const key = await db
+      .selectFrom("legacy_access_keys")
+      .selectAll()
+      .orderBy("user_id")
+      .executeTakeFirstOrThrow();
+    await db
+      .updateTable("legacy_access_keys")
+      .set({ key_hash: hashCredential(`another key ${key.last_four}`, "legacy-key") })
+      .where("user_id", "=", key.user_id)
+      .execute();
+    try {
+      const { ok, json } = await verify({ deepSample: 0 });
+      expect(ok).toBe(false);
+      expect(findings(json.differences, "keys")).toEqual([
+        expect.objectContaining({ ids: { userId: key.user_id } }),
+      ]);
+    } finally {
+      await db
+        .updateTable("legacy_access_keys")
+        .set({ key_hash: key.key_hash })
+        .where("user_id", "=", key.user_id)
+        .execute();
+    }
+  });
+
+  it("incremental: computes the private questions with the checkpoint's answer names, not the target's own list", async () => {
+    const checkpointKey = `survey:${FEEDBACK}`;
+    const checkpoint = await state().get<{ copiedAt: string; answerNames: string[] }>(
+      checkpointKey,
+    );
+    const storedLayout = await migrated.views.getLayout(FEEDBACK, "columns");
+    const reader = openReplicaSource(fixtures);
+    const columns = JSON.parse((await reader.layoutText(FEEDBACK, "columns"))!) as object;
+    await reader.close();
+    // The saved layout hides new columns: an answer only responses carry is private.
+    const hiding = JSON.stringify({ ...columns, newcolumnsvisibility: 2 });
+    const wrap = (source: LegacySource): LegacySource => ({
+      ...source,
+      async layoutText(surveyId, kind) {
+        if (surveyId.toLowerCase() === FEEDBACK && kind === "columns") return hiding;
+        return source.layoutText(surveyId, kind);
+      },
+    });
+    await keepingState(async () => {
+      try {
+        await copied.target.upsertLayouts([{ surveyId: FEEDBACK, kind: "columns", text: hiding }]);
+        // Every survey's row counts as changed since the full verify: its settings are compared.
+        await setBaseline({
+          ...copyMarks,
+          sql: { ...copyMarks.sql, surveys: new Date(0).toISOString() },
+        });
+        expect((await verify({ full: false, wrap })).json.differences).toEqual([]);
+        // An earlier response's answer the target's list lacks (the copy's checkpoint has it).
+        await state().set(
+          checkpointKey,
+          { ...checkpoint!, answerNames: [...checkpoint!.answerNames, "earlier_answer"] },
+          new Date().toISOString(),
+        );
+        const { ok, json } = await verify({ full: false, wrap });
+        expect(ok).toBe(false);
+        expect(findings(json.differences, "private_questions")).toEqual([
+          expect.objectContaining({ ids: { surveyId: FEEDBACK } }),
+        ]);
+      } finally {
+        await state().set(checkpointKey, checkpoint, new Date().toISOString());
+        await copied.target.upsertLayouts([
+          { surveyId: FEEDBACK, kind: "columns", text: storedLayout! },
+        ]);
+      }
+    });
+  });
+
+  describe("the deep walk, run by run", () => {
+    const table = localTableClient(
+      config.resultsStorageConnectionString,
+      CAMPAIGN_TABLE,
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+    );
+    const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    /** Writes the rows to the replica and, with `copy`, to the target as the copy maps them. */
+    async function post(rows: ResultRow[], copy: boolean): Promise<void> {
+      for (const row of rows) {
+        await table.createEntity({
+          partitionKey: "*",
+          rowKey: row.id,
+          id: row.id,
+          happendat: row.happendat!,
+          result: row.result,
+          ...(row.clientid !== undefined && { clientid: row.clientid }),
+          ...(row.ispartialcompleted !== undefined && {
+            ispartialcompleted: row.ispartialcompleted,
+          }),
+        });
+      }
+      if (copy) {
+        await copied.target.upsertResponses(
+          rows.map((row) => mapResponse(CAMPAIGN, row, createReport())!),
+        );
+      }
+    }
+    async function setData(id: string, data: unknown): Promise<void> {
+      await copied.database.db
+        .updateTable("survey_responses")
+        .set({ data: jsonText(copied.database.dialect, data) })
+        .where("id", "=", id)
+        .execute();
+    }
+    async function remove(ids: string[]): Promise<void> {
+      for (const id of ids) await table.deleteEntity("*", id).catch(() => undefined);
+      await copied.database.db.deleteFrom("survey_responses").where("id", "in", ids).execute();
+    }
+    const row = (id: string, at: string, satisfaction: number, partial: boolean): ResultRow => ({
+      id,
+      happendat: new Date(at),
+      result: JSON.stringify({ satisfaction }),
+      clientid: "client-runs",
+      ispartialcompleted: partial,
+    });
+
+    it("a client's later run after the marks leaves its earlier run compared", async () => {
+      const first = "66666666-0000-4000-8000-a0000000f8a1";
+      const late = "66666666-0000-4000-8000-a0000000f8a2";
+      await keepingState(async () => {
+        try {
+          await post([row(first, "2026-05-01T08:00:00Z", 4, false)], true);
+          await pause(20);
+          const marks = new Date().toISOString();
+          await state().set("marks", marksAt(marks), marks);
+          await pause(20);
+          // The same client starts a new run after the marks (not copied yet: pending).
+          await post([row(late, "2026-05-02T08:00:00Z", 1, true)], false);
+          expect((await verify()).json.differences).toEqual([]);
+          await setData(first, { satisfaction: 5 });
+          const { ok, json } = await verify();
+          expect(ok).toBe(false);
+          expect(findings(json.differences, "responses")).toEqual([
+            expect.objectContaining({ ids: { surveyId: CAMPAIGN } }),
+          ]);
+        } finally {
+          await remove([first, late]);
+        }
+      });
+    });
+
+    it("compares the rows of a run, not only the response they fold into", async () => {
+      const save1 = "66666666-0000-4000-8000-a0000000f8d1";
+      const save2 = "66666666-0000-4000-8000-a0000000f8d2";
+      await keepingState(async () => {
+        try {
+          await post(
+            [
+              row(save1, "2026-05-01T08:00:00Z", 1, true),
+              row(save2, "2026-05-01T08:05:00Z", 2, true),
+            ],
+            true,
+          );
+          await pause(20);
+          await marksAfter(new Date());
+          expect((await verify()).json.differences).toEqual([]);
+          // The first save's value, which the second overwrites in the folded response.
+          await setData(save1, { satisfaction: 3 });
+          const { ok, json } = await verify();
+          expect(ok).toBe(false);
+          expect(findings(json.differences, "responses")).toEqual([
+            expect.objectContaining({ ids: { surveyId: CAMPAIGN } }),
+          ]);
+        } finally {
+          await remove([save1, save2]);
+        }
+      });
+    });
+  });
+
+  it("keeps a deletion copy without a time at its storage time: copy writes it, verify counts it", async () => {
+    const responseId = "66666666-0000-4000-8000-a0000000d0d0";
+    const stamped = new Date("2026-06-01T10:00:00.000Z");
+    const undated = (source: LegacySource): LegacySource => ({
+      ...source,
+      async *deletedCopies(postId, since) {
+        yield* source.deletedCopies(postId, since);
+        if (postId.toLowerCase() !== FEEDBACK_POST) return;
+        const entity: ResultRow = { id: responseId, happendat: null, result: '{"satisfaction":3}' };
+        yield { responseId, deletedAt: null, timestamp: stamped, entity };
+      },
+    });
+    const into = await newTarget();
+    const source = undated(openReplicaSource(fixtures));
+    try {
+      const report = createReport();
+      await runCopy(source, into.target, { report, marginMs: 0 });
+      const stored = await into.database.db
+        .selectFrom("deleted_responses")
+        .selectAll()
+        .where("response_id", "=", responseId)
+        .executeTakeFirstOrThrow();
+      expect(new Date(stored.deleted_at as string).toISOString()).toBe(stamped.toISOString());
+      expect((report.toJSON() as VerifyJson).notes).toContainEqual({
+        kind: "deleted_copy_undated",
+        ids: { surveyId: FEEDBACK, responseId },
+      });
+      const { ok, json } = await verify({ into, deepSample: 0, wrap: undated });
+      expect(json.differences).toEqual([]);
+      expect(ok).toBe(true);
+    } finally {
+      await source.close();
+      await into.close();
     }
   });
 });

@@ -699,6 +699,18 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect(await target.keysOf("completion_markers", S1)).toEqual(["client-0"]);
     });
 
+    it("reads the stored rows unfolded, page by page in submission order", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const first = await target.responseRowPage(S1.toUpperCase(), undefined, 2);
+      expect(first).toEqual(data.responses.slice(0, 2).map(({ response }) => response));
+      const last = first.at(-1)!;
+      const rest = await target.responseRowPage(S1, last, 100);
+      expect(rest).toEqual(data.responses.slice(2).map(({ response }) => response));
+      expect(await target.responseRowPage(S2, undefined, 10)).toEqual([]);
+    });
+
     it("reads responses' partial flags and a person's identities", async () => {
       await wipe();
       const data = fixtures();

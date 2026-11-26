@@ -2,22 +2,32 @@
  * `verify`: the go/no-go evidence for the cutover (design, Decisions: "What go means"). It compares
  * the target with the source as of the high-water marks, through both providers' domain reads, the
  * source's reads with the mapping's decisions applied (compare.ts). A source record changed after
- * the marks is listed as pending, never as a difference. Any difference makes the run red.
+ * the marks is listed as pending, never as a difference; so is a target item the source lacks
+ * when a dated trace of its deletion comes after the marks (the survey-delete or delete-all event,
+ * a deletion copy, by their storage times as the marks), and, in a full verify after a
+ * `reconcile` that ran after the marks, one of a kind the old app deletes without a trace (a
+ * layout or permissions blob, a member, a project, a saved view or file, a person no longer
+ * named). Any difference makes the run red.
  *
  * - **Full** (`--full`, the day before the window): every survey's record, definition, theme,
  *   history, layouts, private questions and responses (the source's rows streamed and counted,
  *   complete and all, against the target's `results.stats` and row count, exact on the rows that
- *   existed before the marks); per survey the completion markers and deleted-response copies, and
- *   per table the events, users' views, Studio's own survey files and the linked legacy files,
- *   counted; the projects, members, people, identities and keys; and `deepSample` random surveys
- *   (every survey of a `--sample` run) read in depth through both providers: the record,
- *   definition, theme, history, every response (up to `deepMaxResponses`), layouts and the legacy
- *   files they link.
- * - **Incremental** (in the window, after the final `delta`): what changed since the last full
- *   verify: the changed surveys in full (their responses by the new rows), every survey's new
- *   responses and deletions, and the small tables (surveys, projects, members, people, keys) in
- *   full. A full recount of every response is not part of it, nor is the history of a survey
- *   that did not change: the authors it names are read from the target's history.
+ *   existed before the marks); per survey the completion markers and deleted-response copies
+ *   (one per response id), and per table the events, users' views, Studio's own survey files and
+ *   the linked legacy files, counted; the projects, members, people, identities and keys (each
+ *   source key looked up by its hash); and `deepSample` random surveys (every survey of a
+ *   `--sample` run) read in depth through both providers: the record, definition, theme,
+ *   history, every response (up to `deepMaxResponses`) and the unfolded rows of each, layouts
+ *   and the legacy files they link. It forgets the last green full verify when it starts, and
+ *   becomes the incremental verify's baseline when it ends with no difference.
+ * - **Incremental** (in the window, after the final `delta` and `reconcile`): what changed since
+ *   the last full verify: the changed surveys in full (their responses by the new rows, their
+ *   private questions with the checkpoint's answer names), every survey's new responses and
+ *   deletions, the responses and markers of a survey whose responses were all deleted since
+ *   (the old app's event), the markers of one with a deletion copy since, and the small tables
+ *   (surveys, projects, members, people, keys) in full. A `delta` with no `reconcile` after it
+ *   is a difference. A full recount of every response is not part of it, nor is the history of
+ *   a survey that did not change: the authors it names are read from the target's history.
  *
  * Surveys, people and projects are compared `concurrency` at a time (default 16). An account the
  * target holds that the migration did not seed (an administrator, one made at sign-in) is noted,
@@ -32,6 +42,7 @@ import {
   UPLOADS_PREFIX,
   userFromLegacy,
 } from "../providers/azure-legacy/mapping.js";
+import { foldRuns } from "../providers/runs.js";
 import type { ProviderSet } from "../providers/types.js";
 import {
   bytesChecksum,
@@ -50,8 +61,8 @@ import {
   sameNames,
   storedJson,
 } from "./compare.js";
-import { CHECKPOINT, eventRec, inParallel, type SurveyCheckpoint } from "./copy.js";
-import { CONCURRENCY } from "./delta.js";
+import { CHECKPOINT, eventRec, inParallel, PERMISSIONS, type SurveyCheckpoint } from "./copy.js";
+import { CONCURRENCY, DELETE_ALL_EVENT, RECONCILE, type ReconcileState } from "./delta.js";
 import { fileLinks } from "./map/files.js";
 import { mapPeople } from "./map/people.js";
 import { createReport, phaseTimer, type Report } from "./map/report.js";
@@ -108,9 +119,12 @@ export interface VerifySourceReads {
 
 /**
  * State key of the last green full verify: when, the marks it compared as of, and whether it
- * covered a sample only.
+ * covered a sample only. A full verify removes it when it starts and writes it when it ends
+ * green (pending items allowed), so the incremental verify never builds on a red one.
  */
 const FULL_VERIFY = "verify:full";
+/** The event the old app writes after deleting a survey (best effort, as the delete-all's). */
+const SURVEY_DELETE_EVENT = "SURVEY_DELETE";
 interface FullVerifyState {
   at: string;
   marks: HighWaterMarks;
@@ -118,6 +132,18 @@ interface FullVerifyState {
 }
 
 const LAYOUT_KINDS: readonly LayoutKind[] = ["table", "summary", "columns"];
+
+/** How `verify` counts a table's rows (`countRowsOf`). */
+interface CountOptions {
+  /** Keys a deletion after the marks took from the source: left out on both sides, pending. */
+  excused?: Iterable<string>;
+  /** A key the source holds twice counts once. */
+  distinct?: boolean;
+  /** Keys the target holds that the source lacks are left out, pending (trace-less deletions). */
+  extraPending?: boolean;
+  /** The whole count is pending when it differs (every response deleted after the marks). */
+  changed?: boolean;
+}
 const PAGE = 1000;
 const DEEP_MAX_RESPONSES = 50_000;
 
@@ -141,6 +167,8 @@ export async function runVerify(
   const phase = phaseTimer(report, options.progress ?? (() => undefined));
   await requireSameSample(state, sample);
   await guardSource(state, options.fingerprint, new Date().toISOString(), options.progress);
+  // A full verify that turns red must not leave an older green one as the incremental's baseline.
+  if (options.full) await state.delete(FULL_VERIFY);
   // The mappers note what they decide; the copy reported that, so a re-read notes it nowhere.
   const quiet = () => createReport();
   let ok = true;
@@ -194,6 +222,24 @@ export async function runVerify(
   }
   const wanted = (surveyId: string) => !sample || sample.surveys.has(surveyId);
 
+  // Whether `reconcile` ran after the last `delta`: its own marks are no older than the stored
+  // ones (the first `delta` keeps the copy's marks for it, so a `delta` after it shows here).
+  const reconciled = await state.get<ReconcileState>(RECONCILE);
+  const reconciledAfterMarks =
+    reconciled !== null && Date.parse(reconciled.since.takenAt) >= Date.parse(marks.takenAt);
+  // The window's verify follows the final `delta` and `reconcile`: deletions since the last
+  // `reconcile` are not applied without it.
+  if (since !== null && reconciled !== null && !reconciledAfterMarks) differ("reconcile", {});
+  /**
+   * The day before the window (full, the old service live, after a `reconcile` that ran after
+   * the marks): a target item of a kind the old app deletes without a trace (a layout or
+   * permissions blob, a member, a project, a saved view or file, so also a person no longer
+   * named) that the source lacks was there when that `reconcile` looked, so it was deleted
+   * since: pending. Never in the incremental verify: in the window the source is frozen before
+   * the final `reconcile`, so such an item is one `reconcile` missed, a difference.
+   */
+  const traceless = options.full && reconciledAfterMarks;
+
   // ---- Stores the copy does not take: any row is a difference the operator must see ----
   const partitions: Record<string, number> = {};
   for await (const { partition } of source.ownTokenRows()) {
@@ -244,7 +290,46 @@ export async function runVerify(
       (row.publishid !== null && publishedSince!.has(row.publishid.toLowerCase())));
   /** The results account's tables, listed once: a survey without them has nothing to query. */
   const resultTables = await source.resultTables();
-  phase("stores", "stores the copy does not take, and the changed blobs: read");
+
+  // The dated traces of deletions, by the events' storage times as the marks: a survey deleted,
+  // or every response of one deleted, after the marks (what the target still holds of it is
+  // pending); incremental: the delete-alls since the last full verify and before the marks,
+  // whose surveys' responses and markers are counted.
+  const surveysDeletedLate = new Set<string>();
+  const deletedAllLate = new Set<string>();
+  const deletedAllSince = new Set<string>();
+  for await (const event of source.events(markOf(since ?? marks, "tables"))) {
+    const surveyId = event.surveyId.toLowerCase();
+    const late = after("tables", event.timestamp);
+    if (event.type === SURVEY_DELETE_EVENT && late) surveysDeletedLate.add(surveyId);
+    if (event.type !== DELETE_ALL_EVENT) continue;
+    if (late) deletedAllLate.add(surveyId);
+    else if (since !== null) deletedAllSince.add(surveyId);
+  }
+  // Trace-less deletions of layouts and permissions (`traceless`): what the target holds that
+  // the source's listings lack (`{surveyId}/{kind}`, and survey ids).
+  const layoutsGone = new Set<string>();
+  const permissionsGone = new Set<string>();
+  if (traceless) {
+    const layoutsInSource = new Set<string>();
+    for (const kind of LAYOUT_KINDS) {
+      for await (const name of source.layoutNames(kind)) {
+        layoutsInSource.add(`${name.toLowerCase()}/${kind}`);
+      }
+    }
+    for (const key of await target.keysOf("survey_layouts")) {
+      if (!layoutsInSource.has(key)) layoutsGone.add(key);
+    }
+    const permissionsInSource = new Set<string>();
+    for await (const name of source.changedBlobs("permissions", new Date(0))) {
+      permissionsInSource.add(name.toLowerCase());
+    }
+    for (const key of await state.keys(PERMISSIONS)) {
+      const surveyId = key.slice(PERMISSIONS.length);
+      if (!permissionsInSource.has(surveyId)) permissionsGone.add(surveyId);
+    }
+  }
+  phase("stores", "stores the copy does not take, the changed blobs and the deletions: read");
 
   // ---- People and keys, projects and members, in full in both modes ----
   const run = await state.get<{ startedAt: string }>("run");
@@ -290,24 +375,30 @@ export async function runVerify(
       return;
     }
     const key = expectedKey(keys.get(person.id));
+    // The source's key itself, looked up by its hash as the target's credentials do when it
+    // signs a request: the same last four could be another key.
+    const sourceKey = keys.has(person.id) ? row.accesskey : null;
+    const found =
+      sourceKey === null ? null : await targetProviders.credentials.findLegacyKey(sourceKey);
+    const holds = sourceKey === null ? storedKey === null : found?.userId === person.id;
     judge("people", ids, sameJson(stored, expectedUser(userFromLegacy(row), person)), changed);
     if (stored === null || seeded.has(person.id)) {
       judge("identities", ids, sameJson(identities, expectedIdentities(person)), changed);
-      judge("keys", ids, sameJson(storedKey, key), changed);
+      judge("keys", ids, holds && sameJson(storedKey, key), changed);
       return;
     }
     // Somebody has used the profile (signed in, or linked another sign-in): only what the
-    // migration owns is compared, its own identity and the key's last four; the rest is noted.
+    // migration owns is compared, its own identity and the key; the rest is noted.
     const own = identities.filter((i) => i.provider === "surveyjs" && i.subject === person.id);
     judge("identities", ids, sameJson(own, expectedIdentities(person)), changed);
-    judge("keys", ids, (storedKey?.lastFour ?? null) === (key?.lastFour ?? null), changed);
+    judge("keys", ids, holds, changed);
     report.note("person_used", ids);
   });
   for (const id of await target.idsOf("users")) {
     if (people.has(id)) continue;
     // Only a profile the migration seeded and nobody used should be gone (reconcile removes
     // those); any other account (an administrator, one made at sign-in) stays, noted.
-    if (seeded.has(id)) differ("people", { userId: id }, { inSource: 0 });
+    if (seeded.has(id)) judge("people", { userId: id }, false, traceless, { inSource: 0 });
     else report.note("person_kept_unseeded", { userId: id });
   }
   phase("people", `people: ${people.size} compared`);
@@ -328,30 +419,34 @@ export async function runVerify(
       targetProviders.projects.getProject(project.id),
       targetProviders.projects.listMembers(project.id),
     ]);
+    const want = mappedMemberKeys(members, profiles);
+    const have = memberKeys(storedMembers);
+    // A member removed leaves no change time (the project's member count changes with it): only
+    // extra members the target holds are that.
+    const removed = traceless && want.every((member) => have.includes(member));
     judge(
       "projects",
       ids,
       read !== null && sameJson(stored, expectedProject(read, members)),
-      changed,
+      changed || removed,
     );
-    judge(
-      "members",
-      ids,
-      sameJson(memberKeys(storedMembers), mappedMemberKeys(members, profiles)),
-      changed,
-      { source: members.length, target: storedMembers.length },
-    );
+    judge("members", ids, sameJson(have, want), changed || removed, {
+      source: members.length,
+      target: storedMembers.length,
+    });
   });
   for (const projectId of named.projectsWithoutMembers) {
+    // Left without members by trace-less removals, it is one `reconcile` has yet to remove.
     judge(
       "projects",
       { projectId },
       (await targetProviders.projects.getProject(projectId)) === null,
-      false,
+      traceless,
     );
   }
   for (const id of await target.idsOf("projects")) {
-    if (!projectIds.has(id)) differ("projects", { projectId: id }, { inSource: 0 });
+    if (projectIds.has(id)) continue;
+    judge("projects", { projectId: id }, false, traceless, { inSource: 0 });
   }
   phase("projects", `projects: ${projectIds.size} compared`);
 
@@ -391,25 +486,29 @@ export async function runVerify(
   const deletedOf = (postId: string, from?: Date) =>
     resultTables.has(deletedTableOf(postId)) ? source.deletedCopies(postId, from) : none();
 
-  /** The source's response rows changed after the marks (pending), and its deletions after them. */
+  /**
+   * The source's response rows changed after the marks (pending), and its deletions after them:
+   * the copies stored after the marks, judged by their storage time as the marks are (the time a
+   * copy holds is its writer's), with the client ids whose completion marker went with them.
+   */
   async function afterMarksOf(surveyId: string, postId: string) {
-    const rows: { id: string; clientId: string | null; partial: boolean }[] = [];
+    const rows: { id: string }[] = [];
     for await (const row of responsesOf(postId, markOf(marks, "tables"))) {
       if (!after("tables", row.timestamp)) continue;
       const mapped = mapResponse(surveyId, row, quiet());
-      if (mapped === null) continue;
-      const { id, clientId, partial } = mapped.response;
-      rows.push({ id, clientId: clientId ?? null, partial });
+      if (mapped !== null) rows.push({ id: mapped.response.id });
     }
-    const deleted: { id: string; partial: boolean }[] = [];
+    const deleted: { id: string }[] = [];
+    const clients = new Set<string>();
     for await (const copy of deletedOf(postId, markOf(marks, "tables"))) {
-      if (!after("tables", copy.deletedAt)) continue;
-      const id = copy.responseId.toLowerCase();
-      deleted.push({ id, partial: copy.entity.ispartialcompleted === true });
+      if (!after("tables", copy.timestamp)) continue;
+      deleted.push({ id: copy.responseId.toLowerCase() });
+      if (copy.entity.clientid !== undefined) clients.add(copy.entity.clientid);
     }
     for (const { id } of [...rows, ...deleted]) pending("responses", { surveyId, responseId: id });
-    return { rows, deleted };
+    return { rows, deleted, clients };
   }
+  type AfterMarks = Awaited<ReturnType<typeof afterMarksOf>>;
 
   const seen = new Set<string>();
   async function* wantedRows() {
@@ -431,12 +530,34 @@ export async function runVerify(
       return;
     }
     copied.add(surveyId);
+    const { postId } = base.record;
+    /** What changed after the marks, read once (the counts and the deep walk need it). */
+    let lateRead: Promise<AfterMarks> | null = null;
+    const lateOf = () => (lateRead ??= afterMarksOf(surveyId, postId));
+    // Every response deleted after the marks (the old app's event): what the target still holds
+    // of them is pending.
+    const allDeletedLate = deletedAllLate.has(surveyId);
+    // Changed by a trace-less deletion since a `reconcile` after the marks: the owner's project
+    // gone (or left without members), a layout or the permissions blob gone.
+    const ownerGone = stored.owner.kind === "project" && !projectIds.has(stored.owner.projectId);
+    const surveyTraceless =
+      traceless &&
+      (ownerGone ||
+        permissionsGone.has(surveyId) ||
+        LAYOUT_KINDS.some((kind) => layoutsGone.has(`${surveyId}/${kind}`)));
 
     // Incremental: the responses and deletions since the last full verify, by count.
     const fresh =
       since === null
         ? null
-        : await compareNewResponses(surveyId, base.record.postId, stored, markOf(since, "tables"));
+        : await compareNewResponses(surveyId, postId, stored, markOf(since, "tables"));
+    if (fresh !== null) {
+      // A delete-all since the last full verify: its rows and markers counted (no copies tell
+      // which went); after the marks, pending. A deletion copy since: its markers counted.
+      if (deletedAllSince.has(surveyId)) await countResponses(surveyId, postId, stored, lateOf);
+      if (allDeletedLate) pending("response_counts", ids);
+      if (deletedAllSince.has(surveyId) || fresh.deletions) await countMarkers();
+    }
     // A survey changed since the last full verify is compared in full: its documents when they
     // changed, its settings and private questions also when new responses came in.
     const documentsChanged = changedSinceFull(surveyId, row);
@@ -462,11 +583,14 @@ export async function runVerify(
           ...rec.record,
           settings: { ...rec.record.settings, publicResults: stored.settings.publicResults },
         };
-    judge("surveys", ids, sameJson(stored, expected), rowChanged);
+    judge("surveys", ids, sameJson(stored, expected), rowChanged || surveyTraceless);
     if (!settings) return;
 
     const settingsChanged =
-      rowChanged || layoutsAfterMarks.has(surveyId) || permissionsAfterMarks.has(surveyId);
+      rowChanged ||
+      surveyTraceless ||
+      layoutsAfterMarks.has(surveyId) ||
+      permissionsAfterMarks.has(surveyId);
     if (documents) await compareDocuments(surveyId, rec, texts, rowChanged);
 
     // Responses: counted (full), or the new ones (incremental); then the private questions.
@@ -475,14 +599,15 @@ export async function runVerify(
     let pendingNames: boolean;
     let size: number | null = null;
     if (fresh === null) {
-      const counted = await countResponses(surveyId, rec.record.postId, stored);
+      const counted = await countResponses(surveyId, postId, stored, lateOf);
       answerNames = counted.answerNames;
       pendingNames = counted.pendingNames;
       size = counted.rows;
     } else {
-      // Every name the target lists is taken as an answer name, with the new rows' keys: a
-      // response-only name then follows the layout's rule as the copy applied it.
-      answerNames = [...storedNames, ...fresh.names];
+      // The answer names the copy and every delta read (the checkpoint's), with the new rows'
+      // keys: never the target's own list, which would only confirm itself.
+      const checkpoint = await state.get<SurveyCheckpoint>(`${CHECKPOINT}${surveyId}`);
+      answerNames = [...(checkpoint?.answerNames ?? []), ...fresh.names];
       pendingNames = fresh.late;
     }
     const withResponses = mapSurvey(row, texts.definition, texts.permissions, texts.columns, {
@@ -504,6 +629,31 @@ export async function runVerify(
     );
 
     if (options.full) {
+      await countMarkers();
+      // One response deleted twice (a retried delete) has two copies; the target keeps one.
+      await countSurveyRows(
+        "deleted_responses",
+        surveyId,
+        "deleted_responses",
+        mapAsync(deletedOf(postId), (copy) =>
+          mapDeleted(surveyId, copy, quiet()) === null
+            ? null
+            : { key: copy.responseId.toLowerCase(), late: after("tables", copy.timestamp) },
+        ),
+        { distinct: true },
+      );
+    }
+    if (deep.has(surveyId)) {
+      size ??= (await targetProviders.results.stats(stored)).count;
+      await compareInDepth(surveyId, rec, stored, size, await lateOf());
+    }
+
+    /**
+     * The completion markers, counted: those the source lacks whose client a deletion after the
+     * marks names went with that response (pending); after a delete-all after the marks, all.
+     */
+    async function countMarkers() {
+      const { clients } = await lateOf();
       await countSurveyRows(
         "markers",
         surveyId,
@@ -512,25 +662,14 @@ export async function runVerify(
           key: marker.clientId,
           late: after("tables", marker.timestamp),
         })),
+        { excused: clients, changed: allDeletedLate },
       );
-      await countSurveyRows(
-        "deleted_responses",
-        surveyId,
-        "deleted_responses",
-        mapAsync(deletedOf(rec.record.postId), (copy) =>
-          mapDeleted(surveyId, copy, quiet()) === null
-            ? null
-            : { key: copy.responseId.toLowerCase(), late: after("tables", copy.deletedAt) },
-        ),
-      );
-    }
-    if (deep.has(surveyId)) {
-      size ??= (await targetProviders.results.stats(stored)).count;
-      await compareInDepth(surveyId, rec, stored, size);
     }
   });
   for (const id of targetSurveys) {
-    if (!seen.has(id)) differ("surveys", { surveyId: id }, { inSource: 0 });
+    // Deleted after the marks (its event): pending; any other one is a difference.
+    if (seen.has(id)) continue;
+    judge("surveys", { surveyId: id }, false, surveysDeletedLate.has(id), { inSource: 0 });
   }
   phase("surveys", `surveys: ${seen.size} compared`);
 
@@ -539,6 +678,7 @@ export async function runVerify(
     await countTableRows(
       "events",
       "survey_events",
+      {},
       mapAsync(source.events(), (event) => {
         if (sample && !copied.has(event.surveyId.toLowerCase())) return null;
         // The events the copy writes (`eventRec` skips the unmappable ones).
@@ -546,9 +686,14 @@ export async function runVerify(
         return { key: event.id.toLowerCase(), late: after("tables", event.timestamp) };
       }),
     );
+    // A deleted survey's views and files (its event after the marks) are pending; so is any the
+    // source lacks the day before the window (`traceless`).
+    const ofDeletedSurveys = async (table: "saved_views" | "files") =>
+      (await Promise.all([...surveysDeletedLate].map((id) => target.keysOf(table, id)))).flat();
     await countTableRows(
       "views",
       "saved_views",
+      { excused: await ofDeletedSurveys("saved_views"), extraPending: traceless },
       mapAsync(source.views(), (view) => {
         if (!copied.has(view.surveyId.toLowerCase())) return null;
         const blobName = `${view.surveyId}/${view.userId}/${view.view}`;
@@ -563,6 +708,7 @@ export async function runVerify(
     await countTableRows(
       "own_files",
       "files",
+      { excused: await ofDeletedSurveys("files"), extraPending: traceless },
       mapAsync(source.appFiles(), (blob) => {
         const record = fileRecordFromBlob(blob.blobName, blob.properties, blob.metadata);
         if (record === null || record.surveyId === null || !copied.has(record.surveyId)) {
@@ -590,25 +736,46 @@ export async function runVerify(
   /**
    * The source's rows of a table as of the marks (`late`: changed after them, pending) against
    * the target's: those it holds of the late keys are left out of its count, so the rows that
-   * existed before the marks compare exactly.
+   * existed before the marks compare exactly. Left out the same way: the `excused` keys (rows a
+   * deletion after the marks took from the source), and with `extraPending` every key the
+   * target holds that the source lacks (trace-less deletions); with `distinct`, a key the source
+   * holds twice counts once (the target holds one row per key).
    */
   async function countRowsOf(
     rows: AsyncIterable<{ key: string; late: boolean } | null>,
     table: CountedTable,
-    surveyId?: string,
+    surveyId: string | undefined,
+    options: CountOptions,
   ) {
+    const excused = new Set(options.excused ?? []);
+    const keys = options.distinct || options.extraPending ? new Set<string>() : null;
     let before = 0;
-    const late: string[] = [];
+    const late = new Set<string>();
     for await (const row of rows) {
       if (row === null) continue;
-      if (row.late) late.push(row.key);
-      else before += 1;
+      if (row.late || excused.has(row.key)) late.add(row.key);
+      else if (keys === null) before += 1;
+      else keys.add(row.key);
+    }
+    const sourceLate = late.size;
+    if (keys !== null) {
+      for (const key of late) keys.delete(key);
+      before = keys.size;
+    }
+    for (const key of excused) late.add(key);
+    if (options.extraPending) {
+      for (const key of await target.keysOf(table, surveyId)) {
+        if (!keys!.has(key)) late.add(key);
+      }
     }
     const [total, lateHeld] = await Promise.all([
       target.countRows(table, surveyId),
-      target.existingKeys(table, late, surveyId),
+      target.existingKeys(table, [...late], surveyId),
     ]);
-    return { source: before, target: total - lateHeld.length, late: late.length };
+    return {
+      counts: { source: before, target: total - lateHeld.length },
+      pending: sourceLate > 0 || lateHeld.length > 0,
+    };
   }
 
   async function countSurveyRows(
@@ -616,20 +783,22 @@ export async function runVerify(
     surveyId: string,
     table: CountedTable,
     rows: AsyncIterable<{ key: string; late: boolean } | null>,
+    options: CountOptions = {},
   ) {
-    const { late, ...counts } = await countRowsOf(rows, table, surveyId);
+    const { counts, pending: late } = await countRowsOf(rows, table, surveyId, options);
     // Rows changed after the marks are left out on both sides; listed, never with their keys.
-    if (late > 0) pending(check, { surveyId });
-    judge(check, { surveyId }, counts.source === counts.target, false, counts);
+    if (late) pending(check, { surveyId });
+    judge(check, { surveyId }, counts.source === counts.target, options.changed ?? false, counts);
   }
 
   async function countTableRows(
     check: string,
     table: CountedTable,
+    options: CountOptions,
     rows: AsyncIterable<{ key: string; late: boolean } | null>,
   ) {
-    const { late, ...counts } = await countRowsOf(rows, table);
-    if (late > 0) pending(check, {});
+    const { counts, pending: late } = await countRowsOf(rows, table, undefined, options);
+    if (late) pending(check, {});
     judge(check, {}, counts.source === counts.target, false, counts);
   }
 
@@ -733,7 +902,7 @@ export async function runVerify(
         "layouts",
         { surveyId, kind },
         checksum(text === "" ? null : text) === checksum(storedText),
-        layoutsAfterMarks.has(surveyId),
+        layoutsAfterMarks.has(surveyId) || layoutsGone.has(`${surveyId}/${kind}`),
       );
     }
   }
@@ -758,7 +927,12 @@ export async function runVerify(
    * holds, the complete count by its own rows' partial flags), so every row that existed before
    * the marks and still exists is counted on both.
    */
-  async function countResponses(surveyId: string, postId: string, stored: SurveyRecord) {
+  async function countResponses(
+    surveyId: string,
+    postId: string,
+    stored: SurveyRecord,
+    lateOf: () => Promise<AfterMarks>,
+  ) {
     const answerNames = new Set<string>();
     let rows = 0;
     let complete = 0;
@@ -782,7 +956,7 @@ export async function runVerify(
       if (first === null || response.submittedAt < first) first = response.submittedAt;
       if (last === null || response.submittedAt > last) last = response.submittedAt;
     }
-    const { deleted } = await afterMarksOf(surveyId, postId);
+    const { deleted } = await lateOf();
     const leftOut = [...late, ...deleted].map(({ id }) => id);
     for (const id of leftOut) pending("responses", { surveyId, responseId: id });
     const [states, stats, held] = await Promise.all([
@@ -801,7 +975,8 @@ export async function runVerify(
         targetRows === sourceRows &&
         // The first and last times hold only when no later row is among the target's.
         (heldComplete > 0 || (stats.firstSubmittedAt === first && stats.lastSubmittedAt === last)),
-      false,
+      // Every response deleted after the marks: the target keeps them until `reconcile` runs.
+      deletedAllLate.has(surveyId),
       { source: complete, target: before, sourceRows, targetRows },
     );
     const pendingNames = late.some(({ names }) => names.some((name) => !answerNames.has(name)));
@@ -837,9 +1012,12 @@ export async function runVerify(
     judge("new_responses", { surveyId }, missing === 0, false, { source: fresh, missing });
     let deletions = 0;
     let kept = 0;
+    let anyCopy = false;
     for await (const copy of deletedOf(postId, from)) {
+      anyCopy = true;
       const responseId = copy.responseId.toLowerCase();
-      if (after("tables", copy.deletedAt)) {
+      // By the copy's storage time, the clock of the marks (and of `from`).
+      if (after("tables", copy.timestamp)) {
         pending("responses", { surveyId, responseId });
         continue;
       }
@@ -847,7 +1025,30 @@ export async function runVerify(
       if (await targetProviders.results.hasResponse(stored, responseId)) kept += 1;
     }
     judge("deletions", { surveyId }, kept === 0, false, { source: deletions, kept });
-    return { rows: fresh, names, late };
+    return { rows: fresh, names, late, deletions: anyCopy };
+  }
+
+  /** The source's rows of the survey, each as the copy maps it, placed and checksummed. */
+  async function sourceRowsOf(surveyId: string, postId: string): Promise<PlacedSum[]> {
+    const rows: PlacedSum[] = [];
+    for await (const row of responsesOf(postId)) {
+      const mapped = mapResponse(surveyId, row, quiet());
+      if (mapped !== null) rows.push(placedSum(expectedResponse(mapped.response)));
+    }
+    return rows;
+  }
+
+  /** The target's stored rows of the survey, unfolded, placed and checksummed. */
+  async function targetRowsOf(survey: SurveyRecord): Promise<PlacedSum[]> {
+    const rows: PlacedSum[] = [];
+    let position: { submittedAt: string; id: string } | undefined;
+    for (;;) {
+      const page = await target.responseRowPage(survey.id, position, PAGE);
+      rows.push(...page.map(placedSum));
+      const last = page.at(-1);
+      if (page.length < PAGE || last === undefined) return rows;
+      position = { submittedAt: last.submittedAt, id: last.id };
+    }
   }
 
   /**
@@ -861,6 +1062,7 @@ export async function runVerify(
     rec: NonNullable<ReturnType<typeof mapSurvey>>,
     stored: SurveyRecord,
     size: number,
+    late: AfterMarks,
   ) {
     const ids = { surveyId };
     const read = await sourceProviders.surveys.getSurvey(surveyId);
@@ -939,7 +1141,7 @@ export async function runVerify(
         "deep_layouts",
         { surveyId, kind },
         checksum(mine) === checksum(theirs),
-        layoutsAfterMarks.has(surveyId),
+        layoutsAfterMarks.has(surveyId) || layoutsGone.has(`${surveyId}/${kind}`),
       );
     }
 
@@ -951,15 +1153,25 @@ export async function runVerify(
       report.note("deep_skipped_size", { surveyId });
       return;
     }
-    const late = await afterMarksOf(surveyId, read.postId);
     const lateIds = new Set(late.rows.map((row) => row.id));
-    const lateClients = new Set(late.rows.flatMap((row) => (row.clientId ? [row.clientId] : [])));
     const deletedLate = new Set(late.deleted.map((row) => row.id));
+    // Both sides' rows unfolded, folded into runs as the app reads them: each run's rows by
+    // checksum (a partial save's value a later save overwrites never shows in the folded
+    // response), and the runs a change after the marks touched (by their first row), pending:
+    // a source run holding a row changed after the marks, a target run holding a row deleted
+    // after them. Never a client's other runs.
+    const pendingRuns = new Set<string>();
+    const sourceRuns = runChecksums(
+      await sourceRowsOf(surveyId, read.postId),
+      lateIds,
+      pendingRuns,
+    );
+    const targetRuns = runChecksums(await targetRowsOf(stored), deletedLate, pendingRuns);
     const mine = walk(sourceProviders, read);
     const theirs = walk(targetProviders, stored);
     let a = await mine.next();
     let b = await theirs.next();
-    const counts = { differing: 0, missing: 0, extra: 0 };
+    const counts = { differing: 0, missing: 0, extra: 0, rowsDiffering: 0 };
     let compared = 0;
     while (!a.done || !b.done) {
       if (!a.done && lateIds.has(a.value.id)) {
@@ -973,10 +1185,12 @@ export async function runVerify(
         const expected = expectedResponse(a.value);
         links.push(...fileLinks(expected.data));
         if (compared % PAGE === 0) await compareLinks();
-        if (!sameJson(b.value, expected)) {
-          if (a.value.clientId !== undefined && lateClients.has(a.value.clientId)) {
-            pending("responses", { surveyId, responseId: a.value.id });
-          } else counts.differing += 1;
+        const runId = a.value.id;
+        const rowsSame = sourceRuns.get(runId) === targetRuns.get(runId);
+        if (!sameJson(b.value, expected) || !rowsSame) {
+          if (pendingRuns.has(runId)) pending("responses", { surveyId, responseId: runId });
+          else if (!rowsSame && sameJson(b.value, expected)) counts.rowsDiffering += 1;
+          else counts.differing += 1;
         }
         a = await mine.next();
         b = await theirs.next();
@@ -984,16 +1198,50 @@ export async function runVerify(
         counts.missing += 1;
         a = await mine.next();
       } else if (!b.done) {
-        if (!deletedLate.has(b.value.id)) counts.extra += 1;
+        if (!pendingRuns.has(b.value.id)) counts.extra += 1;
         b = await theirs.next();
       }
     }
-    judge("responses", ids, counts.differing + counts.missing + counts.extra === 0, false, {
-      ...counts,
-      compared,
-    });
+    const total = counts.differing + counts.missing + counts.extra + counts.rowsDiffering;
+    judge("responses", ids, total === 0, deletedAllLate.has(surveyId), { ...counts, compared });
     await compareLinks();
   }
+}
+
+/** A row as folding places it, with the checksum of the whole row. */
+interface PlacedSum {
+  id: string;
+  submittedAt: string;
+  clientId?: string;
+  partial: boolean;
+  sum: string;
+}
+
+const placedSum = (row: SurveyResponse): PlacedSum => ({
+  id: row.id,
+  submittedAt: row.submittedAt,
+  ...(row.clientId !== undefined && { clientId: row.clientId }),
+  partial: row.partial,
+  sum: checksum(row),
+});
+
+/**
+ * The rows folded into runs as the app folds them (ADR 0038): each run's checksum (of its rows'
+ * checksums, in order) by its first row's id. A run holding one of `touched` goes into
+ * `pendingRuns`.
+ */
+function runChecksums(
+  rows: PlacedSum[],
+  touched: ReadonlySet<string>,
+  pendingRuns: Set<string>,
+): Map<string, string> {
+  const sums = new Map<string, string>();
+  for (const run of foldRuns([...rows].sort(positionOrder))) {
+    const first = run[0]!.id;
+    if (run.some((row) => touched.has(row.id))) pendingRuns.add(first);
+    sums.set(first, checksum(run.map((row) => row.sum)));
+  }
+  return sums;
 }
 
 /** The items mapped as they come; a null result is passed on for the caller to skip. */
@@ -1022,7 +1270,10 @@ async function* walk(
 }
 
 /** Submission order: the time as an instant, then the id. */
-function positionOrder(a: SurveyResponse, b: SurveyResponse): number {
+function positionOrder(
+  a: { submittedAt: string; id: string },
+  b: { submittedAt: string; id: string },
+): number {
   const time = Date.parse(a.submittedAt) - Date.parse(b.submittedAt);
   if (time !== 0) return time;
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;

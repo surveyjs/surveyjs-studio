@@ -55,7 +55,8 @@ Commands:
   plan        Count what a copy would move and estimate its size; writes nothing
   copy        Copy everything (or a sample); a stopped run is resumed by running it again
   verify      Compare the target with the source as of the copy's high-water marks
-              (incremental; --full compares everything). Exit 1 on any difference
+              (incremental, since the last full verify that passed, after a delta and
+              then a reconcile; --full compares everything). Exit 1 on any difference
               (with --no-pending, also on any pending item)
   delta       Copy what changed in the source since the last copy or delta
   reconcile   Remove from the target what the source deleted, and re-map changed surveys

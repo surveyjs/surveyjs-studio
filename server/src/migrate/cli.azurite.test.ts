@@ -205,9 +205,15 @@ describe("migrate:hosted against the local replica", () => {
       };
       expect(checks.differences).toEqual([]);
 
-      // A delta and an incremental verify after it stay green.
+      // A delta, then the incremental verify: red until a reconcile follows the delta; green after.
       expect(await cli(["delta", "--target", t.envFile], capture().io)).toBe(0);
-      expect(await cli(["verify", "--target", t.envFile], capture().io)).toBe(0);
+      const unreconciled = capture();
+      expect(await cli(["verify", "--target", t.envFile], unreconciled.io)).toBe(1);
+      expect(unreconciled.out).toContain("difference:reconcile");
+      expect(await cli(["reconcile", "--target", t.envFile], capture().io)).toBe(0);
+      const reconciled = capture();
+      expect(await cli(["verify", "--target", t.envFile], reconciled.io)).toBe(0);
+      expect(reconciled.out).toContain("verify: OK, 0 differences");
 
       // Review focus 5: the wrong name changes nothing.
       const wrong = capture();
