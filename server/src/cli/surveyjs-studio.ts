@@ -6,7 +6,7 @@ import { run as runPurge } from "./purge-deleted-responses.js";
 import { run as runRebaseUrls } from "./rebase-urls.js";
 import { run as runS3Bucket } from "./s3-bucket.js";
 
-/** The hosted edition's command; the self-hosted image (`APP_EDITION=self-hosted`) does not list it. */
+/** The hosted edition's command; the self-hosted image (`APP_EDITION=self-hosted`) neither lists nor runs it. */
 const MIGRATE_HOSTED = `  migrate-hosted <command> [options]
                                   The hosted edition only: copy the legacy data into this
                                   database (plan, copy, verify, delta, reconcile, wipe); see
@@ -71,6 +71,10 @@ export async function run(
     case "purge-deleted-responses":
       return runPurge(rest, io, deps);
     case "migrate-hosted": {
+      if ((deps.env ?? process.env).APP_EDITION === "self-hosted") {
+        io.err("migrate-hosted is part of the hosted edition only.\n");
+        return 2;
+      }
       // Loaded only when asked for: the other commands need none of the legacy store clients.
       const { run: runMigrateHosted } = await import("../migrate/cli.js");
       return runMigrateHosted(rest, io, deps);

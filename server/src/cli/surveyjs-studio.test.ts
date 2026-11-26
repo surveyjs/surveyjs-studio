@@ -69,6 +69,19 @@ describe("surveyjs-studio command", () => {
     expect(result.out).not.toContain("migrate-hosted");
   });
 
+  it("refuses migrate-hosted in the self-hosted edition, even its --help", async () => {
+    for (const argv of [
+      ["migrate-hosted", "--help"],
+      ["migrate-hosted", "plan"],
+    ]) {
+      const result = capture();
+      expect(await run(argv, result.io, { env: { APP_EDITION: "self-hosted" } })).toBe(2);
+      expect(result.out).toBe("");
+      expect(result.err).toContain("migrate-hosted is part of the hosted edition only");
+      expect(result.err).not.toContain("Usage: surveyjs-studio migrate-hosted");
+    }
+  });
+
   it("passes migrate-hosted on: its --help prints its own usage", async () => {
     const result = capture();
     expect(await run(["migrate-hosted", "--help"], result.io, { env: {} })).toBe(0);
