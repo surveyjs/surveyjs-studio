@@ -39,7 +39,8 @@ without `--target`: they act on what a copy already put there. `wipe` also needs
 - **`copy`** takes the high-water marks first, then copies survey by survey (a few at once), checkpointing each, and
   names each survey's history authors from the history it copies. It records its sample (or none) and, at the end of a
   whole pass, that it finished: `delta` and `reconcile` refuse a target whose copy has not finished, and `verify`,
-  `delta` and `reconcile` refuse a `--sample` or `--include` other than the copy's.
+  `delta` and `reconcile` refuse a `--sample` or `--include` other than the copy's. A later `copy` refuses them too once
+  the target holds a copy (a survey checkpointed or a pass finished): only `wipe` lets a target take another sample.
 - **`delta`** finds changes without listing the large stores: the SQL tables by their change time; a changed survey's
   history by its own prefix; responses, completion markers and deletion copies by change time, survey by survey, in
   parallel; the small containers listed and filtered by last-modified time. Then the marks move forward. Marks are
@@ -53,8 +54,9 @@ without `--target`: they act on what a copy already put there. `wipe` also needs
 
 The tool runs inside the hosted image on the new server (`surveyjs-studio migrate-hosted <command>`), so the bytes
 cross the network once, into the new server's object storage. `pnpm migrate:hosted` runs the same code from a checkout
-for development and tests. Every report and progress line gives each phase's duration, so the window's runs are timed
-by the daily ones.
+for development and tests. The self-hosted image does not hold the tool: its stage removes `server/src/migrate`, and
+`migrate-hosted` refuses there (exit 2) rather than only being left out of the usage. Every report and progress line
+gives each phase's duration, so the window's runs are timed by the daily ones.
 
 ### 3. Files: only those the copied data links
 

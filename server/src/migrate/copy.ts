@@ -27,9 +27,9 @@ import type {
   SurveyRec,
   ViewRec,
 } from "./records.js";
-import { storedSampleOf, type SampleSet } from "./sample.js";
+import { sampleMismatch, storedSampleOf, type SampleSet, type StoredSample } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
-import { COPY_COMPLETE, SAMPLE } from "./state.js";
+import { COPY_COMPLETE, Refused, SAMPLE, type MigrationState } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
 export interface CopyOptions {
@@ -488,6 +488,23 @@ export function createSurveyCopier(
   };
 }
 
+/**
+ * Refuses a copy whose sample differs from the one the target already holds (a full copy is the
+ * null sample). Another copy would rewrite the stored sample, and a later `reconcile --sample`
+ * would then delete everything outside it. A target holds a copy once a survey is checkpointed or
+ * a pass finished; the sample is written before either. Only `wipe` starts the target afresh.
+ */
+async function requireCopyFits(
+  state: MigrationState,
+  sample: SampleSet | undefined,
+): Promise<void> {
+  const holdsCopy =
+    (await state.get(COPY_COMPLETE)) !== null || (await state.keys(CHECKPOINT)).length > 0;
+  if (!holdsCopy) return;
+  const why = sampleMismatch(await state.get<StoredSample>(SAMPLE), sample);
+  if (why !== null) throw new Refused(`${why}, or wipe the target to copy something else`);
+}
+
 export async function runCopy(
   source: LegacySource,
   target: MigrationTarget,
@@ -500,6 +517,7 @@ export async function runCopy(
   const progress = options.progress ?? (() => undefined);
   const phase = phaseTimer(report, progress);
   const { state } = target;
+  await requireCopyFits(state, sample);
   const write = dumper(dump);
 
   // The run keeps its start across resumed runs; the marks are the first run's, so a later

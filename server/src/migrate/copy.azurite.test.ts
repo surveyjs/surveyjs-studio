@@ -574,6 +574,21 @@ describe("copy from the local replica", () => {
       expect(byKind.get(kind)?.size, kind).toBe(await count(copied.database, table));
     }
   });
+
+  it("refuses a sample copy onto the full copy, changing nothing", async () => {
+    const before = await dumpOf(copied);
+    const source = openSource();
+    try {
+      const sample = await selectSample(source, 0, [OWNER_ID]);
+      await expect(
+        runCopy(source, copied.target, { now, sample, report: createReport() }),
+      ).rejects.toThrow(Refused);
+      expect(await copied.target.state.get("sample")).toBeNull();
+      expect(await dumpOf(copied)).toBe(before);
+    } finally {
+      await source.close();
+    }
+  });
 });
 
 describe("a sample copy from the local replica", () => {
@@ -627,6 +642,42 @@ describe("a sample copy from the local replica", () => {
       for (const { survey_id } of responseSurveys)
         expect(lower(expectedSurveys)).toContain(survey_id);
       expect(await into.target.state.get("sample")).toMatchObject({ accounts: [owner] });
+    } finally {
+      await source.close();
+      await into.close();
+    }
+  });
+
+  it("refuses a full copy or another sample onto a sample target, so a reconcile of another sample still refuses", async () => {
+    fixtures ??= await readLegacyFixtures();
+    const into = await newTarget();
+    const source = openSource();
+    try {
+      const sample = await selectSample(source, 0, [OWNER_ID]);
+      await runCopy(source, into.target, { now, sample, report: createReport() });
+      const stored = await into.target.state.get("sample");
+      const surveys = async () =>
+        lower(
+          (await into.database.db.selectFrom("surveys").select("id").execute()).map((r) => r.id),
+        );
+      const copiedSurveys = await surveys();
+
+      const other = await selectSample(source, 0, [OUTSIDER_ID]);
+      for (const options of [{}, { sample: other }, { sample: other, full: true }]) {
+        await expect(
+          runCopy(source, into.target, { now, ...options, report: createReport() }),
+        ).rejects.toThrow(/wipe/);
+        expect(await into.target.state.get("sample")).toEqual(stored);
+        expect(await surveys()).toEqual(copiedSurveys);
+      }
+      await expect(
+        runReconcile(source, into.target, { report: createReport(), full: false, sample: other }),
+      ).rejects.toThrow(Refused);
+      expect(await surveys()).toEqual(copiedSurveys);
+
+      // The same sample again is a resumed or repeated copy.
+      await runCopy(source, into.target, { now, sample, full: true, report: createReport() });
+      expect(await surveys()).toEqual(copiedSurveys);
     } finally {
       await source.close();
       await into.close();
