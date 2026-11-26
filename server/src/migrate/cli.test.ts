@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../sql/database.js";
 import { migrate } from "../sql/migrator.js";
 import type { LegacyConfig } from "../config.js";
-import { USAGE, parseArgs, run } from "./cli.js";
+import { USAGE, parseArgs, run, type MigrateDeps } from "./cli.js";
 import type { LegacySource } from "./source/index.js";
 import { describeSource, sourceFingerprint } from "./source/fingerprint.js";
 
@@ -498,6 +498,48 @@ describe("migrate:hosted run", () => {
     });
     expect(result.err).toContain("no recorded source");
     expect(await getState(t.path, "source")).toEqual(sourceFingerprint(legacyOf(LEGACY_ENV)));
+  });
+
+  it("verify --no-pending failing on pending items only prints the marks and the window's rule", async () => {
+    const marks = {
+      takenAt: "2026-12-01T10:05:00.000Z",
+      sql: {
+        users: "2026-12-01T10:00:00.000Z",
+        surveys: "2026-12-01T10:00:00.000Z",
+        organizations: "2026-12-01T10:00:00.000Z",
+        organizationUsers: "2026-12-01T10:00:00.000Z",
+      },
+      tables: "2026-12-01T10:00:01.000Z",
+      blobs: "2026-12-01T10:00:02.000Z",
+    };
+    const verifyWith =
+      (difference: boolean): NonNullable<MigrateDeps["verify"]> =>
+      async (_source, _sourceReads, _targetReads, _target, options) => {
+        options.report.pending("responses", { surveyId: SURVEY, responseId: "r1" });
+        if (difference) options.report.difference("response_counts", { surveyId: SURVEY });
+        return { ok: !difference };
+      };
+    for (const difference of [false, true]) {
+      const t = await targetFolder();
+      await setState(t.path, { marks });
+      const result = capture();
+      expect(
+        await run(["verify", "--no-pending", "--target", t.envFile], result.io, {
+          env: LEGACY_ENV,
+          openSource: untouchable,
+          verify: verifyWith(difference),
+        }),
+      ).toBe(1);
+      expect(result.out).toContain(`FAILED, ${difference ? 1 : 0} differences, 1 pending`);
+      if (difference) {
+        expect(result.err).not.toContain("final delta");
+      } else {
+        expect(result.err).toContain("tables 2026-12-01T10:00:01.000Z");
+        expect(result.err).toContain("blobs 2026-12-01T10:00:02.000Z");
+        expect(result.err).toContain("taken 2026-12-01T10:05:00.000Z");
+        expect(result.err).toMatch(/final delta must start at least 5 minutes after the freeze/);
+      }
+    }
   });
 
   it("wipe refuses a target that names no database, and an empty --confirm", async () => {

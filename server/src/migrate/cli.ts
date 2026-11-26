@@ -31,6 +31,7 @@ import { runCopy } from "./copy.js";
 import { runDelta } from "./delta.js";
 import { openDumpWriter, type DumpWriter } from "./dump.js";
 import { createReport, type Report } from "./map/report.js";
+import { MARKS_MARGIN_MS, type HighWaterMarks } from "./marks.js";
 import { runPlan } from "./plan.js";
 import { runReconcile } from "./reconcile.js";
 import { selectSample, type SampleSet } from "./sample.js";
@@ -220,6 +221,8 @@ export interface MigrateDeps {
   openTarget?: (env: Readonly<Record<string, string | undefined>>) => OpenedTarget;
   /** The legacy file shares; undefined: the real ones (the local replica has none: a stub). */
   shares?: ListingShareReader | null;
+  /** Default `runVerify`. Tests only. */
+  verify?: typeof runVerify;
 }
 
 function openFromSettings(env: Readonly<Record<string, string | undefined>>): OpenedTarget {
@@ -474,6 +477,7 @@ export async function run(
 
     const target = openMigrationTarget(opened!.database, opened!.bytes);
     let ok = true;
+    let verifiedMarks: HighWaterMarks | null = null;
     if (command === "copy") {
       await runCopy(source, target, {
         report,
@@ -502,15 +506,23 @@ export async function run(
         localAccounts: true,
       });
       try {
-        ({ ok } = await runVerify(source, sourceProviders, targetProviders, target, {
-          full: args.full,
-          ...sampled,
-          deepSample: args.deepSample ?? 20,
-          ...(args.deepMaxResponses !== null && { deepMaxResponses: args.deepMaxResponses }),
-          ...fingerprinted,
-          report,
-          progress,
-        }));
+        // Read now: the providers' close below closes the target's database.
+        verifiedMarks = await target.state.get<HighWaterMarks>("marks");
+        ({ ok } = await (deps.verify ?? runVerify)(
+          source,
+          sourceProviders,
+          targetProviders,
+          target,
+          {
+            full: args.full,
+            ...sampled,
+            deepSample: args.deepSample ?? 20,
+            ...(args.deepMaxResponses !== null && { deepMaxResponses: args.deepMaxResponses }),
+            ...fingerprinted,
+            report,
+            progress,
+          },
+        ));
       } finally {
         await sourceProviders.close().catch(() => undefined);
         // Closes the target's database too.
@@ -527,7 +539,23 @@ export async function run(
     const differences = total("difference:");
     const pending = total("pending:");
     // The window's verify: a record changed after the marks means the source was not frozen.
-    if (command === "verify" && args.noPending && pending > 0) ok = false;
+    if (command === "verify" && args.noPending && pending > 0) {
+      if (ok && differences === 0) {
+        // Pending only: most likely writes of the live service from just before the freeze,
+        // which the marks (taken a margin back of the source's clocks) still count as after.
+        const marks = verifiedMarks;
+        io.err(
+          (marks
+            ? `The pending items changed after the marks (tables ${marks.tables}, ` +
+              `blobs ${marks.blobs}; taken ${marks.takenAt}). `
+            : "The pending items changed after the marks. ") +
+            `In the window the final delta must start at least ${MARKS_MARGIN_MS / 60_000} ` +
+            "minutes after the freeze (the marks' margin, plus any storage clock skew), or " +
+            "the last writes before the freeze stay pending.\n",
+        );
+      }
+      ok = false;
+    }
     io.out(
       command === "verify"
         ? `verify${args.full ? " --full" : ""}: ${ok ? "OK" : "FAILED"}, ` +

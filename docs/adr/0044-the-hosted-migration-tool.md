@@ -255,6 +255,10 @@ data, and some command-line gaps. Fixed, and recorded here (point 2 and point 6 
   keep working; a mismatch is refused once one is stored.
 - **`verify --no-pending`:** a pending item fails the run (exit 1). The window's `verify` uses it: after the freeze
   nothing may be pending, so "green with pending" no longer passes as "go". The summary line gives the pending count.
+  The marks are taken a margin (5 minutes) back of the source's clocks, so the final `delta` must start at least that
+  margin, plus any storage clock skew, after the freeze: otherwise the live service's last writes before the freeze
+  count as after the marks and fail the run. A run that fails on pending items only prints the marks' times and this
+  rule.
 - **`wipe` refuses a target that shows use** (a user who signed in, or a sign-in other than the migrated surveyjs.io
   one) unless `--even-if-used` is given, and a target whose settings name no database, so `--confirm ""` cannot match
   it. After the cutover the target is production.

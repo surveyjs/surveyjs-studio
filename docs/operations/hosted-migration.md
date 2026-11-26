@@ -126,7 +126,9 @@ delete everything outside the new one. To copy something else into a target, `wi
    explain every difference.
 5. **In the window,** once the old service is stopped and today's Studio is read-only: the final `delta` (its marks are
    taken after the freeze), `reconcile`, then an incremental `verify --no-pending` (after the freeze nothing may be
-   pending). All three pass: go. Any difference: no-go, and the old side starts again
+   pending). Start the final `delta` at least 5 minutes after the freeze (the marks' safety margin, plus any skew of the
+   old storage's clock): its marks are taken that margin back, so writes the live service made in the last minutes
+   before the freeze would otherwise count as after the marks, and the `verify` would fail on them. All three pass: go. Any difference: no-go, and the old side starts again
    ([ADR 0042](../adr/0042-one-switch-to-the-new-server.md)).
 
 Do not run two commands against one target at the same time.
@@ -217,7 +219,9 @@ is corrected and a `delta` or `copy --full` runs again.
 - **Pending** is not a difference. A record that changed in the source after the marks is listed under `pending` and
   left out of the comparison on both sides. The next `delta` copies it. Many pending items before the window are normal
   (the old service is live); in the window, after the freeze, there must be none: the window's `verify` runs with
-  `--no-pending`, so one fails it.
+  `--no-pending`, so one fails it. The marks are taken 5 minutes back of the source's clocks, so the final `delta` must
+  start at least that long after the freeze; when only pending items fail the run, it prints the marks' times and this
+  rule.
 - **People:** an account the migration did not create (an administrator, an account made at sign-in) is noted, not a
   difference; so is a person the copy could not write because the target holds their email or sign-in. Of a profile
   somebody has used since the copy, only what the migration owns is compared. A profile the migration created that the
