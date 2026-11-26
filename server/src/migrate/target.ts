@@ -96,6 +96,8 @@ export interface MigrationTarget {
   upsertPeople(recs: readonly PersonRec[]): Promise<{ skipped: { id: string; reason: string }[] }>;
   /** The users' legacy access keys; a user's other keys are removed. */
   upsertKeys(recs: readonly KeyRec[]): Promise<void>;
+  /** Every legacy access key of these users (their source rows hold none any more); how many. */
+  deleteKeys(userIds: readonly string[]): Promise<number>;
   /** The bytes, then the `files` row (and the `legacy_files` name). */
   upsertFile(rec: FileRec): Promise<void>;
   upsertEvents(recs: readonly EventRec[]): Promise<void>;
@@ -734,6 +736,18 @@ export function openMigrationTarget(database: SqlDatabase, bytes: ByteStore): Mi
             .execute();
         }
       });
+    },
+
+    async deleteKeys(userIds) {
+      let deleted = 0;
+      for (const batch of batches([...new Set(userIds.map((id) => guid(id, "A user id")))])) {
+        const result = await db
+          .deleteFrom("legacy_access_keys")
+          .where("user_id", "in", batch)
+          .executeTakeFirst();
+        deleted += Number(result.numDeletedRows);
+      }
+      return deleted;
     },
 
     async upsertFile({ kind, legacyName, record, content }) {

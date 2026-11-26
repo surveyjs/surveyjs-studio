@@ -45,12 +45,14 @@ without `--target`: they act on what a copy already put there. `wipe` also needs
   early counts. Only `wipe` lets a target take another sample.
 - **`delta`** finds changes without listing the large stores: the SQL tables by their change time; a changed survey's
   history by its own prefix; responses, completion markers and deletion copies by change time, survey by survey, in
-  parallel; the small containers listed and filtered by last-modified time. Then the marks move forward. Marks are
+  parallel; the small containers listed and filtered by last-modified time. A survey the target lacks is copied whole,
+  with its saved views, Studio's own files and (in a sample) events of any time. Then the marks move forward. Marks are
   taken a safety margin back, so a write in flight is read again, and never later than the database's own clock (a row
   stamped in the future is reported, not allowed to hide later changes).
 - **`reconcile`** removes from the target what the source no longer has, and maps again the surveys whose project or
   settings a deletion changed. It compares response counts first and the ids only where they differ, streamed through
-  the target. A full count of every survey's responses is never part of the window.
+  the target, and the completion markers of every survey with a deletion since its last run. A full count of every
+  survey's responses is never part of the window.
 - **`verify`** is the go or no-go (point 6). **`wipe`** keeps the schema.
 - **`--sample <share>` and `--include <file>`** select whole accounts (point 7).
 
@@ -162,8 +164,7 @@ a full copy would hold them. `plan --sample` also writes the sample's survey ids
 - **Deleted responses** keep the answers, client id, partial flag and respondent address as one JSON object, with the
   deletion time of the copy. Events keep their ids, types, times and payload text, without the respondent address older
   rows carry; the ids in the payload are lower-cased.
-- **Local times** the old servers wrote without a zone (survey created, project and member times) are read as UTC until
-  the SurveyJS team says otherwise.
+- **Local times** written without a zone (survey created, project and member times) are read as UTC.
 - **An id that is not a GUID** is skipped and reported, never a crash. Completion markers keep their client id as stored.
 
 ### 9. Not copied, by decision
@@ -180,12 +181,8 @@ Actions log.
 
 ### 11. Inputs from the SurveyJS team, before the real runs
 
-- **The old servers' time zone.** Until it is known, local times are read as UTC.
-- **Whether the old app writes its SQL change-time columns in UTC.** A writer behind UTC is covered: the marks are each
-  table's latest change time, so they follow its clock. A writer ahead of UTC stamps rows in the database's future; the
-  marks are capped at the database's own clock and the future time is reported, so those rows keep reading as changed
-  after the marks (read again by every `delta`, pending in `verify`) for as long as the writer is ahead, after the
-  freeze too.
+The time zone and clock questions are settled (see "Changed 2026-11-26: delta and reconcile").
+
 - **The real column list of the old SQL tables** (run `pnpm inspect:legacy-schema`, read only, again).
 - **Read-only credentials:** a read-only SQL login; the storage accounts and file shares with read and list only.
 
@@ -207,7 +204,7 @@ Actions log.
 - A `verify` that passes means no known difference as of the marks. Pending items are the next `delta`'s work, and the
   run order in Operations makes the last `delta` come after the freeze.
 - Migration `0012` adds `migration_state`; nothing else in the schema changes.
-- Open: the four inputs of point 11.
+- Open: the two inputs of point 11.
 
 ## Changed 2026-11-26: copy fidelity
 
@@ -264,3 +261,34 @@ data, and some command-line gaps. Fixed, and recorded here (point 2 and point 6 
   it. After the cutover the target is production.
 - **`migrate-hosted` without the tool:** an image without `server/src/migrate` refuses the command (exit 2) whatever
   `APP_EDITION` says, rather than failing on the missing module.
+
+## Changed 2026-11-26: delta and reconcile
+
+The same review found changes `delta` and `reconcile` missed, things `reconcile` deleted wrongly, and a moment where a
+survey's answers were less private than the rule says. Fixed, and recorded here (point 2 and point 11 read with these):
+
+- **Completion markers of deleted responses.** The old app deletes a response's completion marker with it, which leaves
+  no change time, and `reconcile` compared markers only after a delete-all. It now compares the marker keys with the
+  source for every survey with a deletion copy since its last run (every survey with `--full`), and removes those the
+  source lacks; a stale marker would answer "already completed" after the cutover.
+- **A survey that enters through `delta`** (one newly in a sample, or one the copy skipped and that was corrected) was
+  copied whole, but its saved views, Studio's own files and, in a sample, its events were read by change time only, so
+  what predated the marks was lost. They are now taken whatever their time: the views by the survey's prefix, the files
+  from the file listing `delta` reads anyway, the events by one read of the whole log (a full copy took them all).
+- **The interim private list.** When `delta` or `reconcile` rewrites a copied survey, the list stored until its new
+  responses are read is now computed with the checkpoint's answer names too, so an answer only responses carry is
+  private from the first write under a new layout, not only once the run finishes the survey.
+- **A cleared access key.** `delta` wrote a changed person again but only ever added keys; it now removes the stored key
+  of every person it writes whose source row holds none. Whether the site can clear a key is not confirmed; a key the
+  target kept would stay valid after the cutover.
+- **A response posted again after its deletion.** `reconcile` deleted every id a deletion copy named. An
+  `Idempotency-Key` gives a response the same id again, so it now reads each such id in the source first: one the
+  source holds again stays, and is copied again (through the privacy guard) if the target lacks it.
+- **A survey `reconcile` removes** loses its checkpoint too, so if it comes back a later `copy` copies it rather than
+  skipping it as copied.
+- **Point 11, clocks (product owner, 2026-11-26):** the old stores set the change times themselves (the SQL database,
+  the storage service), not the servers that write to them: one clock per store, which the marks already follow. The
+  two questions on the old servers' time zone and on the change-time columns' clock are no longer inputs; local times
+  stay read as UTC. One assumption is left and guarded: `plan` and `copy` read, read only, the defaults of the SQL
+  change-time columns and the SQL server's offset from UTC, and print them; `copy` refuses (exit 2) when a default takes
+  the server's local time and the server is not on UTC.

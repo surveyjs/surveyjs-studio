@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   changedAfterMarks,
+  changeTimeCheck,
   isCompleteMarks,
   markOf,
   MARKS_MARGIN_MS,
@@ -144,5 +145,58 @@ describe("marks per store", () => {
     expect(isCompleteMarks(marks)).toBe(true);
     expect(isCompleteMarks({ takenAt: marks.takenAt })).toBe(false);
     expect(isCompleteMarks(null)).toBe(false);
+  });
+});
+
+describe("the SQL change-time check", () => {
+  const none = { users: "none", surveys: "none", organizations: "none", organizationUsers: "none" };
+
+  it("prints the server's offset and each change-time column's default", () => {
+    const { summary, refusal } = changeTimeCheck({
+      utcOffsetMinutes: 0,
+      defaults: { ...none, surveys: "(getutcdate())", users: "unreadable" },
+    });
+    expect(summary).toBe(
+      "SQL change times: the server's UTC offset +00:00; column defaults: users unreadable, " +
+        "surveys (getutcdate()), organizations none, organizationUsers none.",
+    );
+    expect(refusal).toBeNull();
+  });
+
+  it("takes a local-time default on a UTC server", () => {
+    expect(
+      changeTimeCheck({ utcOffsetMinutes: 0, defaults: { ...none, users: "(getdate())" } }).refusal,
+    ).toBeNull();
+  });
+
+  it("refuses a local-time default on a server that is not on UTC, naming the tables", () => {
+    for (const fn of [
+      "(getdate())",
+      "(SYSDATETIME())",
+      "(CURRENT_TIMESTAMP)",
+      "(sysdatetimeoffset())",
+    ]) {
+      const { summary, refusal } = changeTimeCheck({
+        utcOffsetMinutes: -330,
+        defaults: { ...none, surveys: fn, organizationUsers: fn },
+      });
+      expect(summary).toContain("offset -05:30");
+      expect(refusal, fn).toContain("surveys, organizationUsers");
+      expect(refusal, fn).toContain("offset -05:30");
+    }
+  });
+
+  it("takes UTC defaults, no default and an unreadable one on any server", () => {
+    expect(
+      changeTimeCheck({
+        utcOffsetMinutes: 120,
+        defaults: {
+          users: "(getutcdate())",
+          surveys: "(sysutcdatetime())",
+          organizations: "none",
+          organizationUsers: "unreadable",
+        },
+      }).refusal,
+    ).toBeNull();
   });
 });

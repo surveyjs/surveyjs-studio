@@ -30,6 +30,7 @@ import type {
 import { sampleMismatch, storedSampleOf, type SampleSet, type StoredSample } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
 import type { SourceFingerprint } from "./source/fingerprint.js";
+import type { ResultRow } from "./source/tables.js";
 import { COPY_COMPLETE, guardSource, Refused, SAMPLE, type MigrationState } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
@@ -133,11 +134,13 @@ export interface SurveyCopier {
   /**
    * The survey row with its definition, theme and publish id (the private questions as the
    * union with what is stored, never weaker mid-way), the newest history entries (the rest
-   * pruned) and the layouts. Null when the row maps to no survey (reported).
+   * pruned) and the layouts. Null when the row maps to no survey (reported). `answerNames`: the
+   * keys its stored responses use (a checkpoint's), so the interim list covers them under a new
+   * layout too (`delta` and `reconcile` rewriting a copied survey).
    */
   documents(
     row: SurveyRow,
-    options?: { keepCheckpoint?: boolean },
+    options?: { keepCheckpoint?: boolean; answerNames?: Iterable<string> },
   ): Promise<WrittenDocuments | null>;
   /**
    * The survey's responses, markers and deletion copies, all or those changed after `since`.
@@ -147,6 +150,15 @@ export interface SurveyCopier {
     surveyId: string,
     postId: string,
     since?: Date,
+    guard?: PrivacyGuard,
+  ): Promise<{ answerNames: Set<string>; links: Link[]; privateQuestions: string[] | null }>;
+  /**
+   * Some of the survey's responses (rows `rows` would read), written through the same privacy
+   * guard; `reconcile` copies again a response the source still holds.
+   */
+  responses(
+    surveyId: string,
+    entities: AsyncIterable<ResultRow> | Iterable<ResultRow>,
     guard?: PrivacyGuard,
   ): Promise<{ answerNames: Set<string>; links: Link[]; privateQuestions: string[] | null }>;
   texts(surveyId: string): Promise<SurveyTexts>;
@@ -292,11 +304,17 @@ export function createSurveyCopier(
 
   async function documents(
     row: SurveyRow,
-    { keepCheckpoint = false }: { keepCheckpoint?: boolean } = {},
+    {
+      keepCheckpoint = false,
+      answerNames,
+    }: { keepCheckpoint?: boolean; answerNames?: Iterable<string> } = {},
   ): Promise<WrittenDocuments | null> {
     const surveyId = row.id.toLowerCase();
     const read = await texts(surveyId);
-    const rec = mapSurvey(row, read.definition, read.permissions, read.columns, ctx);
+    const rec = mapSurvey(row, read.definition, read.permissions, read.columns, {
+      ...ctx,
+      ...(answerNames !== undefined && { extraAnswerNames: answerNames }),
+    });
     if (rec === null) return null;
     // Rewriting a survey: its checkpoint goes first, so a run stopped inside it copies it again.
     if (!keepCheckpoint) await state.delete(`${CHECKPOINT}${surveyId}`);
@@ -339,7 +357,11 @@ export function createSurveyCopier(
     return { surveyId, rec, texts: read, interim, links, authors };
   }
 
-  async function rows(surveyId: string, postId: string, since?: Date, guard?: PrivacyGuard) {
+  async function responses(
+    surveyId: string,
+    entities: AsyncIterable<ResultRow> | Iterable<ResultRow>,
+    guard?: PrivacyGuard,
+  ) {
     // Responses in batches; their keys are answer names the privacy rule must cover too.
     const answerNames = new Set<string>();
     /** The legacy files the responses link, each once. */
@@ -375,26 +397,31 @@ export function createSurveyCopier(
       privateQuestions = [...privateQuestions, ...added];
       await target.setPrivateQuestions(surveyId, privateQuestions);
     };
-    const responses = batcher<ResponseRec>(size, async (batch) => {
+    const written = batcher<ResponseRec>(size, async (recs) => {
       // The names private before the answers that carry them are readable.
-      await protect(batch);
-      await target.upsertResponses(batch);
-      await write("response", batch);
+      await protect(recs);
+      await target.upsertResponses(recs);
+      await write("response", recs);
       responseBatches += 1;
       if (options.failAfter !== undefined && responseBatches >= options.failAfter) {
         throw new Error(`Stopped after ${responseBatches} batches of responses (failAfter)`);
       }
     });
-    for await (const entity of source.responses(postId, since)) {
+    for await (const entity of entities) {
       const response = mapResponse(surveyId, entity, report);
       if (response === null) continue;
       for (const name of Object.keys(response.response.data)) answerNames.add(name);
       for (const link of fileLinks(response.response.data)) {
         links.set(`${link.kind}/${link.name}`, link);
       }
-      await responses.add(response);
+      await written.add(response);
     }
-    await responses.flush();
+    await written.flush();
+    return { answerNames, links: [...links.values()], privateQuestions };
+  }
+
+  async function rows(surveyId: string, postId: string, since?: Date, guard?: PrivacyGuard) {
+    const copied = await responses(surveyId, source.responses(postId, since), guard);
 
     const markers = batcher<MarkerRec>(size, async (batch) => {
       await target.upsertMarkers(batch);
@@ -414,7 +441,7 @@ export function createSurveyCopier(
       if (mappedCopy !== null) await deleted.add(mappedCopy);
     }
     await deleted.flush();
-    return { answerNames, links: [...links.values()], privateQuestions };
+    return copied;
   }
 
   async function finish(
@@ -525,6 +552,7 @@ export function createSurveyCopier(
     },
     documents,
     rows,
+    responses,
     texts,
     finish,
     linkedFiles,

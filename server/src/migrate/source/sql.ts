@@ -26,7 +26,23 @@ export interface SqlSource {
    * read in one statement (high-water marks).
    */
   latestChanges(): Promise<LatestChanges>;
+  /**
+   * The defaults of the tables' change-time columns and the SQL server's UTC offset, from the
+   * catalog (read only): the marks assume the database stamps those times on one UTC clock.
+   */
+  changeTimeDefaults(): Promise<ChangeTimeDefaults>;
   close(): Promise<void>;
+}
+
+/**
+ * A change-time column's default: its SQL text, `none` without one, `unreadable` when the login
+ * may not read its text (no VIEW DEFINITION).
+ */
+export type ColumnDefault = string | "none" | "unreadable";
+export interface ChangeTimeDefaults {
+  /** The SQL server's offset from UTC, in minutes (0 on a server that runs on UTC). */
+  utcOffsetMinutes: number;
+  defaults: Record<SqlTable, ColumnDefault>;
 }
 
 /** The SQL tables the tool reads, by their high-water mark names. */
@@ -48,6 +64,24 @@ const LATEST =
   "(SELECT MAX([timestamp]) FROM Organizations) AS organizations, " +
   "(SELECT MAX([timestamp]) FROM OrganizationUsers) AS organizationUsers, " +
   "SYSUTCDATETIME() AS now";
+/** The SQL tables by their names in the database. */
+const SQL_TABLES: Record<string, SqlTable> = {
+  users: "users",
+  surveys: "surveys",
+  organizations: "organizations",
+  organizationusers: "organizationUsers",
+};
+/**
+ * The change-time columns' defaults (catalog views only: no table is read), then the server's
+ * offset from UTC.
+ */
+const DEFAULTS =
+  "SELECT t.name AS tableName, d.object_id AS defaultId, d.definition AS definition " +
+  "FROM sys.tables t JOIN sys.columns c ON c.object_id = t.object_id AND c.name = 'timestamp' " +
+  "LEFT JOIN sys.default_constraints d " +
+  "ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id " +
+  "WHERE t.name IN ('Users', 'Surveys', 'Organizations', 'OrganizationUsers'); " +
+  "SELECT DATEPART(TZOFFSET, SYSDATETIMEOFFSET()) AS utcOffset";
 /** The `since` window; a row with no change time is in every one. */
 const SINCE = "([timestamp] > @since OR [timestamp] IS NULL)";
 
@@ -170,6 +204,32 @@ export function openSqlSource(
         };
       } catch (error) {
         throw new LegacyStoreError("latest change read", error);
+      }
+    },
+    async changeTimeDefaults() {
+      try {
+        const request = (await connected()).request();
+        const result = await request.query(DEFAULTS);
+        const sets = result.recordsets as unknown as [
+          { tableName: string; defaultId: number | null; definition: string | null }[],
+          { utcOffset: number }[],
+        ];
+        const defaults: Record<SqlTable, ColumnDefault> = {
+          users: "none",
+          surveys: "none",
+          organizations: "none",
+          organizationUsers: "none",
+        };
+        for (const { tableName, defaultId, definition } of sets[0]) {
+          const table = SQL_TABLES[tableName.toLowerCase()];
+          if (table === undefined || defaultId === null) continue;
+          defaults[table] = definition ?? "unreadable";
+        }
+        const offset = sets[1]?.[0]?.utcOffset;
+        if (typeof offset !== "number") throw new Error("no offset");
+        return { utcOffsetMinutes: offset, defaults };
+      } catch (error) {
+        throw new LegacyStoreError("change-time default read", error);
       }
     },
     async close() {

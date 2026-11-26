@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import { BlobServiceClient } from "@azure/storage-blob";
 import sql from "mssql";
@@ -12,10 +13,11 @@ import { createStubShareReader } from "../providers/azure-legacy/legacy-shares-s
 import { API_TOKENS_TABLE } from "../providers/azure-legacy/writes.js";
 import type { ProviderSet } from "../providers/types.js";
 import type { DatabaseSchema } from "../sql/schema.js";
+import type { CopyOptions } from "./copy.js";
 import { runDelta } from "./delta.js";
 import { createReport, type Report } from "./map/report.js";
 import { isCompleteMarks, MARKS_MARGIN_MS, type HighWaterMarks } from "./marks.js";
-import type { PersonRec } from "./records.js";
+import type { PersonRec, SurveyRec } from "./records.js";
 import { runReconcile } from "./reconcile.js";
 import {
   copyFromReplica,
@@ -25,6 +27,8 @@ import {
   targetProviders,
   type Target,
 } from "./replica-setup.js";
+import { selectSample } from "./sample.js";
+import type { MigrationTarget } from "./target.js";
 import { runVerify } from "./verify.js";
 
 // Runs in the `providers-azurite` Vitest project. After a copy of the golden fixtures the test
@@ -43,6 +47,13 @@ const API_SURVEY = "22222222-0000-4000-8000-a00000000008";
 const FEEDBACK_TABLE = "post33333333000040008000a00000000001";
 const FEEDBACK_DELETED = "postdelete33333333000040008000a00000000001";
 const CAMPAIGN_TABLE = "post33333333000040008000a00000000004";
+const FEEDBACK_MARKERS = "SurveyCompletion22222222000040008000a00000000001";
+const CLIENT = "client-0001";
+const CLIENT_RESPONSE = "66666666-0000-4000-8000-a00000000002";
+const OWNER = "11111111-0000-4000-8000-a00000000001";
+const MEMBER = "11111111-0000-4000-8000-a00000000003";
+const OUTSIDER = "11111111-0000-4000-8000-a00000000004";
+const MARKETING = "55555555-0000-4000-8000-a00000000001";
 const VIEW_USER = "11111111-0000-4000-8000-a0000000f00d";
 const NEW_RESPONSE = "66666666-0000-4000-8000-a0000000d001";
 const DELETION_COPY = "77777777-0000-4000-8000-a0000000d002";
@@ -550,5 +561,235 @@ describe("delta and reconcile from the high-water marks", () => {
     );
     expect(await dumpOf(copied)).toBe(once);
     expect(await replicaState()).toEqual(before);
+  }, 180_000);
+});
+
+describe("delta and reconcile: changes the marks alone do not show", () => {
+  const targets: Target[] = [];
+  /** A fresh copy of the replica as it is now, the marks at its start. */
+  const freshCopy = async (options: Partial<CopyOptions> = {}) => {
+    const into = await newTarget();
+    targets.push(into);
+    await copyFromReplica(into, fixtures, { marginMs: 0, ...options });
+    return into;
+  };
+  const feedbackRow = (id: string) =>
+    fixtures.tables
+      .find((t) => t.account === "results" && t.name === FEEDBACK_TABLE)!
+      .entities.find((e) => String(e.RowKey).toLowerCase() === id)!;
+  /** A deletion copy of the row, as the old app's deleteResult writes it first. */
+  const deletionCopy = async (row: Record<string, unknown>) => {
+    const copyId = randomUUID();
+    await results(FEEDBACK_DELETED).createTable();
+    await results(FEEDBACK_DELETED).createEntity({
+      partitionKey: "*",
+      rowKey: copyId,
+      id: copyId,
+      type: "SURVEY_DELETEPOSTRESUTL",
+      instanceid: String(row.RowKey),
+      happendat: new Date(),
+      result: String(row.result),
+      ...(typeof row.clientid === "string" && { clientid: row.clientid }),
+    });
+  };
+
+  beforeAll(async () => {
+    // The tests above changed the replica: start again from the golden fixtures, without the
+    // Studio files they wrote (the loader does not clear those).
+    for (const [container, name] of written.splice(0)) {
+      await blobs
+        .getContainerClient(container)
+        .deleteBlob(name)
+        .catch(() => undefined);
+    }
+    await loadLegacyFixtures(replicaEnv(), { log: () => undefined });
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const into of targets) await into.close();
+  });
+
+  it("keeps a response-only answer private while delta rewrites the survey under a layout that hides new columns", async () => {
+    // A response with an answer name the definition lacks, copied while no layout hides it.
+    const secret = "66666666-0000-4000-8000-a0000000d201";
+    await results(CAMPAIGN_TABLE).createEntity({
+      partitionKey: "*",
+      rowKey: secret,
+      id: secret,
+      happendat: new Date(),
+      result: JSON.stringify({ secretanswer: "hidden" }),
+    });
+    const into = await freshCopy();
+    expect(await into.target.privateQuestionsOf(CAMPAIGN)).not.toContain("secretanswer");
+    // The owner then saves a column layout under which new columns are hidden.
+    await putBlob(
+      "surveyresultcolumns",
+      CAMPAIGN,
+      JSON.stringify({
+        columns: [{ name: "satisfaction", visibility: 0 }],
+        newcolumnsvisibility: 2,
+      }),
+    );
+
+    // Every private list the run stores for the survey, in order.
+    const stored: string[][] = [];
+    const recording = new Proxy(into.target, {
+      get(held, key, receiver) {
+        if (key === "upsertSurvey") {
+          return async (rec: SurveyRec) => {
+            if (rec.record.id === CAMPAIGN) stored.push([...rec.privateQuestions]);
+            await held.upsertSurvey(rec);
+          };
+        }
+        if (key === "setPrivateQuestions") {
+          return async (surveyId: string, names: readonly string[]) => {
+            if (surveyId === CAMPAIGN) stored.push([...names]);
+            await held.setPrivateQuestions(surveyId, names);
+          };
+        }
+        return Reflect.get(held, key, receiver) as unknown;
+      },
+    }) satisfies MigrationTarget;
+    await run((source) => runDelta(source, recording, { report: createReport(), marginMs: 0 }));
+    expect(stored.length).toBeGreaterThan(0);
+    for (const names of stored) expect(names).toContain("secretanswer");
+  }, 180_000);
+
+  it("removes the completion marker of a response deleted since the marks", async () => {
+    const into = await freshCopy();
+    expect(await into.target.keysOf("completion_markers", FEEDBACK)).toContain(CLIENT);
+    // As the old app's deleteResult does: the copy, then the client's marker, then the row.
+    const row = feedbackRow(CLIENT_RESPONSE);
+    await deletionCopy(row);
+    await results(FEEDBACK_MARKERS).deleteEntity("*", CLIENT);
+    await results(FEEDBACK_TABLE).deleteEntity("*", String(row.RowKey));
+
+    await run((source) => runDelta(source, into.target, { report: createReport(), marginMs: 0 }));
+    await run((source) =>
+      runReconcile(source, into.target, { report: createReport(), full: false, marginMs: 0 }),
+    );
+    expect(await into.target.existingKeys("survey_responses", [CLIENT_RESPONSE], FEEDBACK)).toEqual(
+      [],
+    );
+    expect(await into.target.keysOf("completion_markers", FEEDBACK)).not.toContain(CLIENT);
+
+    // --full compares every survey's markers, a deletion copy or not.
+    const markers = results(`SurveyCompletion${CAMPAIGN.replaceAll("-", "")}`);
+    expect(await into.target.keysOf("completion_markers", CAMPAIGN)).toEqual(["client-0002"]);
+    await markers.deleteEntity("*", "client-0002");
+    await run((source) =>
+      runReconcile(source, into.target, { report: createReport(), full: true, marginMs: 0 }),
+    );
+    expect(await into.target.keysOf("completion_markers", CAMPAIGN)).toEqual([]);
+  }, 180_000);
+
+  it("keeps a response a deletion copy names while the source holds it again, copying it back if missing", async () => {
+    const into = await freshCopy();
+    // Deleted, then posted again under the same id (an Idempotency-Key gives the same id): the
+    // copies name rows the result table holds again.
+    const kept = "66666666-0000-4000-8000-a00000000003";
+    const missing = "66666666-0000-4000-8000-a00000000004";
+    await deletionCopy(feedbackRow(kept));
+    await deletionCopy(feedbackRow(missing));
+    // The target lost one of them (a reconcile in between, say).
+    await into.target.deleteResponses(FEEDBACK, [missing]);
+
+    const report = createReport();
+    await run((source) => runReconcile(source, into.target, { report, full: false, marginMs: 0 }));
+    expect(
+      (await into.target.existingKeys("survey_responses", [kept, missing], FEEDBACK)).sort(),
+    ).toEqual([kept, missing]);
+    expect(report.toJSON()).toMatchObject({
+      notes: expect.arrayContaining([
+        {
+          kind: "reconcile_response_copied_again",
+          ids: { surveyId: FEEDBACK, responseId: missing },
+        },
+      ]),
+    });
+  }, 180_000);
+
+  it("deletes the stored key of a person whose access key the site cleared", async () => {
+    const into = await freshCopy();
+    const keysOf = () =>
+      into.database.db
+        .selectFrom("legacy_access_keys")
+        .select("key_hash")
+        .where("user_id", "=", OWNER)
+        .execute();
+    expect(await keysOf()).toHaveLength(1);
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, OWNER)
+      .input("now", sql.DateTime, new Date())
+      .query("UPDATE Users SET accesskey = NULL, [timestamp] = @now WHERE id = @id");
+
+    await run((source) => runDelta(source, into.target, { report: createReport(), marginMs: 0 }));
+    expect(await keysOf()).toEqual([]);
+  }, 180_000);
+
+  it("takes the views, own files and (sample) events from before the marks of a survey delta copies whole", async () => {
+    const campaignView = `${CAMPAIGN}/${MEMBER}/table`;
+    const campaignFile = newFileId(CAMPAIGN);
+    await putBlob(VIEWS, campaignView, '{"columns":[]}');
+    await putBlob(FILES, `${CAMPAIGN}/${campaignFile}`, "campaign bytes", fileMetadata("c.png"));
+    // Blob times are whole seconds: a second before the marks counts as before them.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const transfer = fixtures.tables
+      .find((t) => t.account === "surveys" && t.name === "surveys")!
+      .entities.find((e) => String(e.surveyid).toLowerCase() === CAMPAIGN)!;
+
+    // A sample of the outsider only: not a Marketing member, so the campaign is not in it.
+    const sampleNow = () => run((source) => selectSample(source, 0, [OUTSIDER]));
+    const before = await sampleNow();
+    expect(before.surveys.has(CAMPAIGN)).toBe(false);
+    const into = await freshCopy({ sample: before });
+    expect(await into.target.idsOf("surveys")).not.toContain(CAMPAIGN);
+
+    // After the marks the outsider joins Marketing, as the old app's join writes it.
+    const now = new Date();
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, randomUUID())
+      .input("project", sql.UniqueIdentifier, MARKETING)
+      .input("user", sql.UniqueIdentifier, OUTSIDER)
+      .input("now", sql.DateTime, now)
+      .query(
+        "INSERT INTO OrganizationUsers (id, organizationid, userid, role, type, happendat, [timestamp]) " +
+          "VALUES (@id, @project, @user, 'user', 'ORGANIZATION_JOIN', @now, @now)",
+      );
+    const after = await sampleNow();
+    expect(after.surveys.has(CAMPAIGN)).toBe(true);
+
+    await run((source) =>
+      runDelta(source, into.target, { report: createReport(), marginMs: 0, sample: after }),
+    );
+    expect(await into.target.idsOf("surveys")).toContain(CAMPAIGN);
+    expect({
+      views: await into.target.keysOf("saved_views", CAMPAIGN),
+      events: await into.target.keysOf("survey_events", CAMPAIGN),
+      files: await into.target.keysOf("files", CAMPAIGN),
+    }).toEqual({
+      views: [campaignView],
+      events: [String(transfer.RowKey).toLowerCase()],
+      files: [campaignFile],
+    });
+  }, 240_000);
+
+  it("forgets the checkpoint and permissions record of a survey it removes", async () => {
+    const into = await freshCopy();
+    expect(await into.target.state.get(`survey:${FEEDBACK}`)).not.toBeNull();
+    expect(await into.target.state.get(`permissions:${FEEDBACK}`)).not.toBeNull();
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, FEEDBACK)
+      .query("DELETE FROM Surveys WHERE id = @id");
+    await run((source) =>
+      runReconcile(source, into.target, { report: createReport(), full: false, marginMs: 0 }),
+    );
+    expect(await into.target.idsOf("surveys")).not.toContain(FEEDBACK);
+    // A copy after the survey came back would otherwise take it as copied and skip it.
+    expect(await into.target.state.get(`survey:${FEEDBACK}`)).toBeNull();
+    expect(await into.target.state.get(`permissions:${FEEDBACK}`)).toBeNull();
   }, 180_000);
 });

@@ -1,4 +1,5 @@
 import { BlobServiceClient } from "@azure/storage-blob";
+import sql from "mssql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { replicaConfig } from "../../legacy/replica-env.js";
 import { readLegacyFixtures, type LegacyFixtures } from "../../providers/azure-legacy/fixtures.js";
@@ -72,6 +73,62 @@ describe("the legacy source readers (local replica)", () => {
     expect(owner.accesskey).toBe("access-key-1");
     expect(owner.timestamp).toBeInstanceOf(Date);
     expect(owner.email).toBe(first.email);
+  });
+
+  it("reads the change-time columns' defaults and the SQL server's UTC offset", async () => {
+    // The replica's server runs on UTC, and its fixture tables have no defaults.
+    expect(await source.changeTimeDefaults()).toEqual({
+      utcOffsetMinutes: 0,
+      defaults: {
+        users: "none",
+        surveys: "none",
+        organizations: "none",
+        organizationUsers: "none",
+      },
+    });
+    // With one (added for the test, then dropped), its text as the catalog gives it.
+    const pool = await new sql.ConnectionPool(config.sqlConnectionString).connect();
+    try {
+      await pool.query(
+        "ALTER TABLE Surveys ADD CONSTRAINT DF_Surveys_timestamp_test DEFAULT GETDATE() FOR [timestamp]",
+      );
+      try {
+        expect((await source.changeTimeDefaults()).defaults).toEqual({
+          users: "none",
+          surveys: "(getdate())",
+          organizations: "none",
+          organizationUsers: "none",
+        });
+      } finally {
+        await pool.query("ALTER TABLE Surveys DROP CONSTRAINT DF_Surveys_timestamp_test");
+      }
+    } finally {
+      await pool.close();
+    }
+  });
+
+  it("reads one response by its row key, as stored or lower-case, null when there is none", async () => {
+    const table = fixtures.tables.find(
+      (t) =>
+        t.account === "results" && t.name.startsWith("post") && !t.name.startsWith("postdelete"),
+    )!;
+    const postId = table.name.slice(4).replace(/^(.{8})(.{4})(.{4})(.{4})/, "$1-$2-$3-$4-");
+    const id = String(table.entities[0]!.RowKey);
+    expect((await source.response(postId, id))?.id).toBe(id);
+    expect((await source.response(postId, id.toUpperCase()))?.id.toLowerCase()).toBe(
+      id.toLowerCase(),
+    );
+    expect(await source.response(postId, MISSING)).toBeNull();
+    expect(await source.response(MISSING, id)).toBeNull();
+  });
+
+  it("lists one survey's views by its prefix", async () => {
+    const views = await collect(source.views(viewSurvey.toUpperCase()));
+    expect(views.map((v) => `${v.surveyId}/${v.userId}/${v.view}`).sort()).toEqual([
+      `${viewSurvey}/${viewUser}/summary`,
+      `${viewSurvey}/${viewUser}/table`,
+    ]);
+    expect(await collect(source.views(MISSING))).toEqual([]);
   });
 
   it("reads surveys with theme, projects and project members", async () => {

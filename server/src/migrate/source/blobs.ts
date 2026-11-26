@@ -36,7 +36,11 @@ export interface BlobSource {
   ): Promise<{ entry: HistoryEntryRecord; text: string } | null>;
   layoutText(surveyId: string, kind: LayoutKind): Promise<string | null>;
   permissionsText(surveyId: string): Promise<string | null>;
-  views(): AsyncIterable<{
+  /**
+   * The users' saved views; with a survey id, that survey's only (listed by its prefix, the
+   * lower-case id the app names them with).
+   */
+  views(surveyId?: string): AsyncIterable<{
     surveyId: string;
     userId: string;
     view: "summary" | "table";
@@ -217,8 +221,9 @@ export function openBlobSource(connectionString: string): BlobSource {
     permissionsText: (surveyId) =>
       textOf("public questions read", PERMISSIONS_CONTAINER, surveyId.toLowerCase()),
 
-    async *views() {
-      for await (const blob of blobsOf("view list", VIEWS_CONTAINER)) {
+    async *views(surveyId) {
+      const prefix = surveyId === undefined ? undefined : `${surveyId.toLowerCase()}/`;
+      for await (const blob of blobsOf("view list", VIEWS_CONTAINER, prefix)) {
         const [surveyId, userId, view, ...rest] = blob.name.split("/");
         if (!surveyId || !userId || rest.length > 0) continue;
         if (view !== "summary" && view !== "table") continue;

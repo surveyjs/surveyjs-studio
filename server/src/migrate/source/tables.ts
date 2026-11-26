@@ -20,6 +20,11 @@ export interface ResultRow extends Omit<LegacyResultEntity, "happendat"> {
 /** The legacy Azure Tables, read only: pages of entities, never a table in memory. */
 export interface TableSource {
   responses(postId: string, since?: Date): AsyncIterable<ResultRow & { timestamp: Date }>;
+  /**
+   * One response by its row key (a point read: as given, then lower-case, as the app writes it);
+   * null when neither row (or the table) is there.
+   */
+  response(postId: string, id: string): Promise<ResultRow | null>;
   /** `ispartialcompleted` as stored (the mapping takes only a Boolean true as partial). */
   markers(
     surveyId: string,
@@ -181,6 +186,19 @@ export function openTableSource(config: {
       for await (const row of entitiesOf("response read", table, since, true)) {
         yield { ...resultRow(row, row.rowKey ?? ""), timestamp: dateOf(row.timestamp) ?? EPOCH };
       }
+    },
+    async response(postId, id) {
+      const table = results(responseTableOf(postId));
+      for (const key of new Set([id, id.toLowerCase()])) {
+        try {
+          const row = await table.getEntity<Record<string, unknown>>("*", key);
+          return resultRow(row, row.rowKey ?? key);
+        } catch (error) {
+          if (statusOf(error) === 404) continue;
+          throw new LegacyStoreError("response read", error);
+        }
+      }
+      return null;
     },
     async *markers(surveyId, since) {
       const table = results(`SurveyCompletion${dashless(surveyId)}`);

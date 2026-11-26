@@ -331,17 +331,26 @@ describe("migrate:hosted run", () => {
   }
 
   /** A source that must not be read: the command refuses, or stops, before. */
-  const untouchable = (): LegacySource =>
+  const UTC_DEFAULTS = {
+    utcOffsetMinutes: 0,
+    defaults: { users: "none", surveys: "none", organizations: "none", organizationUsers: "none" },
+  };
+  /** A source whose every read throws but the change-time check, which answers `changeTimes`. */
+  const untouchableWith = (changeTimes: unknown): LegacySource =>
     new Proxy({} as LegacySource, {
       get: (_, key) =>
         key === "close"
           ? () => Promise.resolve()
           : key === "then"
             ? undefined
-            : () => {
-                throw new Error(`the source was read (${String(key)})`);
-              },
+            : key === "changeTimeDefaults"
+              ? () => Promise.resolve(changeTimes)
+              : () => {
+                  throw new Error(`the source was read (${String(key)})`);
+                },
     });
+  /** The same, its SQL change times stamped on UTC. */
+  const untouchable = (): LegacySource => untouchableWith(UTC_DEFAULTS);
 
   const OTHER_ENV = {
     LEGACY_SQL_CONNECTION_STRING: "Server=other.invalid;Database=elsewhere;Password=secret-one",
@@ -441,6 +450,50 @@ describe("migrate:hosted run", () => {
     expect(result.err).toContain("LEGACY_SURVEYS_STORAGE_CONNECTION_STRING");
     expect(result.err).not.toContain("sig=abc");
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("plan and copy print the SQL change-time defaults; copy refuses a local-time one off UTC", async () => {
+    const planned = capture();
+    await run(["plan"], planned.io, { env: LEGACY_ENV, openSource: untouchable });
+    expect(planned.out).toContain(
+      "SQL change times: the server's UTC offset +00:00; column defaults: users none, " +
+        "surveys none, organizations none, organizationUsers none.",
+    );
+
+    const dir = folder();
+    const path = join(dir, "new.db");
+    const envFile = join(dir, "target.env");
+    writeFileSync(
+      envFile,
+      `STORAGE_PROVIDER=sqlite
+SQLITE_PATH=${path}
+FILE_STORE=local
+FILES_PATH=${join(dir, "f")}
+`,
+    );
+    const local = {
+      utcOffsetMinutes: 60,
+      defaults: { ...UTC_DEFAULTS.defaults, users: "(getdate())" },
+    };
+    const refused = capture();
+    const code = await run(["copy", "--target", envFile], refused.io, {
+      env: LEGACY_ENV,
+      openSource: () => untouchableWith(local),
+    });
+    expect(code).toBe(2);
+    expect(refused.out).toContain("offset +01:00; column defaults: users (getdate())");
+    expect(refused.err).toContain("Refused: the change-time default of users takes the SQL");
+    expect(refused.err).toContain("Nothing was changed.");
+    // Refused before the target is opened: not even created.
+    expect(existsSync(path)).toBe(false);
+
+    // plan only prints it.
+    const plannedLocal = capture();
+    await run(["plan"], plannedLocal.io, {
+      env: LEGACY_ENV,
+      openSource: () => untouchableWith(local),
+    });
+    expect(plannedLocal.err).not.toContain("Refused");
   });
 
   it("copy records the source it read, and refuses a target holding another source's copy", async () => {

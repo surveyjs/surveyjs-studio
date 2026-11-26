@@ -848,6 +848,20 @@ export function describeMigrationTargetSuite(dialect: SqlDialectName): void {
       expect(await providers.surveys.getSurvey(S2)).not.toBeNull();
     });
 
+    it("deletes the legacy keys of the given users only", async () => {
+      await wipe();
+      const data = fixtures();
+      await writeAll(target, data);
+      const keys = () => database.db.selectFrom("legacy_access_keys").select("user_id").execute();
+      expect(await keys()).toEqual([{ user_id: ALICE }]);
+      expect(await target.deleteKeys([BOB, guid(778)])).toBe(0);
+      expect(await keys()).toEqual([{ user_id: ALICE }]);
+      expect(await target.deleteKeys([ALICE.toUpperCase()])).toBe(1);
+      expect(await keys()).toEqual([]);
+      // The person stays.
+      expect(await target.idsOf("users")).toContain(ALICE);
+    });
+
     it("keeps its state in the state store", async () => {
       await target.state.clear();
       await target.state.set("run", { id: "r1" }, at(0));

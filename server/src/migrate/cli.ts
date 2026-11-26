@@ -31,7 +31,7 @@ import { runCopy } from "./copy.js";
 import { runDelta } from "./delta.js";
 import { openDumpWriter, type DumpWriter } from "./dump.js";
 import { createReport, type Report } from "./map/report.js";
-import { MARKS_MARGIN_MS, type HighWaterMarks } from "./marks.js";
+import { changeTimeCheck, MARKS_MARGIN_MS, type HighWaterMarks } from "./marks.js";
 import { runPlan } from "./plan.js";
 import { runReconcile } from "./reconcile.js";
 import { selectSample, type SampleSet } from "./sample.js";
@@ -39,6 +39,7 @@ import { describeSource, sourceFingerprint, type SourceFingerprint } from "./sou
 import { openLegacySource, type LegacySource } from "./source/index.js";
 import { probeLegacySource } from "./source/probe.js";
 import type { ListingShareReader } from "./source/shares.js";
+import type { ChangeTimeDefaults } from "./source/sql.js";
 import { Refused } from "./state.js";
 import { openMigrationTarget } from "./target.js";
 import { runVerify } from "./verify.js";
@@ -374,6 +375,7 @@ export async function run(
   let source: LegacySource | null = null;
   let dump: DumpWriter | null = null;
   let databaseClosed = false;
+  let changeTimes: ChangeTimeDefaults | null = null;
   try {
     // The source first: a source that does not answer is refused before the target is opened
     // (or created, or migrated).
@@ -388,6 +390,16 @@ export async function run(
           });
         });
       source = await open(legacy);
+      // The marks' one assumption, checked before the target is opened: a refused copy changes
+      // nothing.
+      if (command === "plan" || command === "copy") {
+        changeTimes = await source.changeTimeDefaults();
+        const check = changeTimeCheck(changeTimes);
+        io.out(`${check.summary}\n`);
+        if (command === "copy" && check.refusal !== null) {
+          return usage(`Refused: ${check.refusal}. Nothing was changed.`);
+        }
+      }
     }
 
     if (command !== "plan") {
@@ -471,7 +483,9 @@ export async function run(
         );
       }
       if (plan.estimate) io.out(`Estimate: ${JSON.stringify(plan.estimate)}\n`);
-      if (args.report !== null) writeJson(args.report, { plan, ...(report.toJSON() as object) });
+      if (args.report !== null) {
+        writeJson(args.report, { plan, changeTimes, ...(report.toJSON() as object) });
+      }
       return 0;
     }
 

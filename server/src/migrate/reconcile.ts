@@ -1,20 +1,25 @@
 /**
  * `reconcile`: removes from the target what the source no longer has (design, Commands).
  * - Surveys, projects, members and people: the full key sets, compared (the SQL tables are
- *   small). A survey removed takes its rows and Studio's own files with it; legacy files are
- *   never removed (other records may link them, and the old shares keep the bytes). Only people
+ *   small). A survey removed takes its rows, Studio's own files and its checkpoint with it (so a
+ *   survey that comes back is copied again); legacy files are never removed (other records may link them, and the old shares keep the bytes). Only people
  *   the migration pre-created and nobody used are removed; any other account is kept, noted.
  * - A survey whose owner the current source maps differently (its project gone or left without
  *   members), or whose layout or permissions blob is gone, is mapped and written again through
  *   `copy`'s per-survey functions (such deletions leave no change time for `delta`).
  * - Users' saved views and Studio's own files: the small containers' names, compared.
- * - Responses: the deletion copies since the last reconcile (`deleteResponses`); the surveys whose
- *   responses were all deleted (the old app's event), markers too, and the surveys changed since
- *   the last reconcile (every survey with `--full`): the counts compared first and, where they
- *   differ (always after a delete-all), the ids, streamed through a temporary table of the
- *   target (never every id in memory). Inside the window a survey above `maxCountResponses` is
- *   not counted (the old store cannot count rows without reading them all); noted.
- * Responses the source has and the target misses are `delta`'s to copy; they are noted only.
+ * - Responses: the deletion copies since the last reconcile, each id read in the source first: one
+ *   the result table holds again (posted again under the same id) stays, and is copied again if
+ *   the target lacks it; the others go (`deleteResponses`). The surveys whose responses were all
+ *   deleted (the old app's event) and the surveys changed since the last reconcile (every survey
+ *   with `--full`): the counts compared first and, where they differ (always after a
+ *   delete-all), the ids, streamed through a temporary table of the target (never every id in
+ *   memory). Inside the window a survey above `maxCountResponses` is not counted (the old store
+ *   cannot count rows without reading them all); noted.
+ * - Completion markers (deleted with their response, leaving no change time): their keys compared
+ *   with the source's for every survey with a deletion copy or a delete-all since the last
+ *   reconcile (every survey with `--full`); those the source lacks go.
+ * Other responses the source has and the target misses are `delta`'s to copy; noted only.
  */
 import { fileRecordFromBlob, isGuid } from "../providers/azure-legacy/mapping.js";
 import type { LayoutKind, SurveyOwner } from "../domain/types.js";
@@ -25,6 +30,7 @@ import {
   inParallel,
   PERMISSIONS,
   type SurveyCheckpoint,
+  type SurveyTexts,
 } from "./copy.js";
 import { CONCURRENCY, DELETE_ALL_EVENT, RECONCILE, storedMarks } from "./delta.js";
 import type { ReconcileState } from "./delta.js";
@@ -37,6 +43,7 @@ import { collectNamed } from "./named.js";
 import type { SampleSet } from "./sample.js";
 import type { LegacySource } from "./source/index.js";
 import type { SourceFingerprint } from "./source/fingerprint.js";
+import type { ResultRow } from "./source/tables.js";
 import { guardSource, requireCompleteCopy, requireSameSample } from "./state.js";
 import type { MigrationTarget } from "./target.js";
 
@@ -157,9 +164,12 @@ export async function runReconcile(
   for (const surveyId of await target.idsOf("surveys")) {
     if (expected.has(surveyId)) {
       migrated.push(surveyId);
-    } else if (await target.deleteSurvey(surveyId)) {
-      removed("survey", { surveyId });
+      continue;
     }
+    if (await target.deleteSurvey(surveyId)) removed("survey", { surveyId });
+    // Its checkpoint too: a survey that comes back is then copied again, not skipped as copied.
+    await state.delete(`${CHECKPOINT}${surveyId}`);
+    await state.delete(`${PERMISSIONS}${surveyId}`);
   }
 
   phase("surveys", `surveys: ${migrated.length} kept`);
@@ -191,9 +201,13 @@ export async function runReconcile(
   const copier = createSurveyCopier(source, target, { ctx, batchSize: BATCH, now });
   for (const row of remap) {
     const surveyId = row.id.toLowerCase();
-    const written = await copier.documents(row, { keepCheckpoint: true });
-    if (written === null) continue;
     const checkpoint = await state.get<SurveyCheckpoint>(`${CHECKPOINT}${surveyId}`);
+    // The responses' keys make the interim private list cover them under the new mapping too.
+    const written = await copier.documents(row, {
+      keepCheckpoint: true,
+      ...(checkpoint?.answerNames && { answerNames: checkpoint.answerNames }),
+    });
+    if (written === null) continue;
     if (checkpoint?.answerNames) {
       await copier.finish(row, written.texts, checkpoint.answerNames, written.interim);
     } else {
@@ -257,20 +271,50 @@ export async function runReconcile(
   }
   const cap = options.maxCountResponses ?? MAX_COUNT_RESPONSES;
   let responsesRemoved = 0;
+  /** Responses a deletion copy names that the source holds again and the target lacks. */
+  const copyAgain = new Map<string, ResultRow[]>();
 
   await inParallel(migrated, options.concurrency ?? CONCURRENCY, async (surveyId) => {
     const postId = expected.get(surveyId)!;
-    // Deleted since the last reconcile, by their copies.
-    const copies: string[] = [];
+    // Deleted since the last reconcile, by their copies (ids as stored).
+    const copies = new Set<string>();
+    let anyCopy = false;
     for await (const copy of source.deletedCopies(postId, tablesSince)) {
-      if (isGuid(copy.responseId)) copies.push(copy.responseId.toLowerCase());
+      anyCopy = true;
+      if (isGuid(copy.responseId)) copies.add(copy.responseId);
     }
-    if (copies.length > 0) {
-      const removedCopies = await target.deleteResponses(surveyId, copies);
-      responsesRemoved += removedCopies;
+    // An id the result table holds again (posted again after the deletion) is not deleted.
+    const gone: string[] = [];
+    const back: ResultRow[] = [];
+    for (const id of copies) {
+      const row = await source.response(postId, id);
+      if (row === null) gone.push(id.toLowerCase());
+      else back.push(row);
+    }
+    if (gone.length > 0) responsesRemoved += await target.deleteResponses(surveyId, gone);
+    if (back.length > 0) {
+      const held = new Set(
+        await target.existingKeys(
+          "survey_responses",
+          back.map((row) => row.id.toLowerCase()),
+          surveyId,
+        ),
+      );
+      const lacking = back.filter((row) => !held.has(row.id.toLowerCase()));
+      if (lacking.length > 0) copyAgain.set(surveyId, lacking);
     }
 
     const allDeleted = deletedAll.has(surveyId);
+    // The old app deletes a response's completion marker with it, leaving no change time.
+    if (options.full || allDeleted || anyCopy) {
+      const clients = new Set<string>();
+      for await (const marker of source.markers(surveyId)) clients.add(marker.clientId);
+      const stale = (await target.keysOf("completion_markers", surveyId)).filter(
+        (clientId) => !clients.has(clientId),
+      );
+      if (stale.length > 0) await target.deleteMarkers(surveyId, stale);
+    }
+
     if (!options.full && !allDeleted && !changed.has(surveyId)) return;
     const held = await target.countRows("survey_responses", surveyId);
     if (!options.full && !allDeleted && held > cap) {
@@ -301,15 +345,40 @@ export async function runReconcile(
       }
       if (missing > 0) report.note("reconcile_missing_responses", { surveyId });
     }
-    if (allDeleted) {
-      const clients = new Set<string>();
-      for await (const marker of source.markers(surveyId)) clients.add(marker.clientId);
-      const stale = (await target.keysOf("completion_markers", surveyId)).filter(
-        (clientId) => !clients.has(clientId),
-      );
-      if (stale.length > 0) await target.deleteMarkers(surveyId, stale);
-    }
   });
+
+  // ---- Responses posted again after their deletion, which the target lacks ----
+  // Through `copy`'s own path (the privacy guard first); the survey rows are read again, once,
+  // rather than all kept in memory for what is rare.
+  if (copyAgain.size > 0) {
+    for await (const row of source.surveys()) {
+      const surveyId = row.id.toLowerCase();
+      const rows = copyAgain.get(surveyId);
+      if (rows === undefined) continue;
+      const checkpoint = await state.get<SurveyCheckpoint>(`${CHECKPOINT}${surveyId}`);
+      const known = checkpoint?.answerNames ?? null;
+      let texts: SurveyTexts | null = null;
+      const textsOf = async () => (texts ??= await copier.texts(surveyId));
+      const stored = await target.privateQuestionsOf(surveyId);
+      const copied = await copier.responses(surveyId, rows, {
+        row,
+        texts: textsOf,
+        known: known ?? [],
+        stored: () => Promise.resolve(stored),
+      });
+      // A new key: the final private list and the checkpoint's names, as `delta` keeps them.
+      // Without the checkpoint's names the guard's list (a superset, never weaker) stays.
+      if (known !== null && [...copied.answerNames].some((name) => !known.includes(name))) {
+        const names = new Set([...known, ...copied.answerNames]);
+        await copier.finish(row, await textsOf(), names, copied.privateQuestions ?? stored);
+        await copier.checkpoint(surveyId, names);
+      }
+      await copier.linkedFiles(surveyId, copied.links, { skipStored: true });
+      for (const { id } of rows) {
+        report.note("reconcile_response_copied_again", { surveyId, responseId: id.toLowerCase() });
+      }
+    }
+  }
   phase("responses", `responses removed: ${responsesRemoved}`);
 
   await state.set(RECONCILE, { since: next, at: at() } satisfies ReconcileState, at());

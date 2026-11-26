@@ -55,6 +55,10 @@ and `reconcile` refuse (exit 2) another one, so a `reconcile` against the wrong 
 names are the same for a read-only and a read-write login to the same stores. A target copied before sources were
 recorded takes the source of its next run, with a printed note.
 
+`plan` and `copy` also print the SQL server's offset from UTC and the defaults of the change-time columns: the
+high-water marks assume the database stamps those times on UTC. `copy` refuses (exit 2) when a default takes the
+server's local time and the server is not on UTC, before the target is opened.
+
 **The target** comes from the file given to `--target`; the environment is not used, so a shell that happens to hold
 the production settings cannot reach production by mistake.
 
@@ -99,8 +103,8 @@ whose `copy` has not finished (a stopped copy is run again until it ends with `c
 
 Exit codes: 0 done or green, 1 failed or differences found, 2 a usage error or a refusal (a missing flag, a refused
 `wipe`, a store of the source that does not answer, a source or a sample other than the copy's, a copy that has not
-finished). A refused command changes nothing. The progress goes to the error output; the summary and the counts of the
-report go to the standard output.
+finished, a change-time default in local time on a SQL server not on UTC). A refused command changes nothing. The
+progress goes to the error output; the summary and the counts of the report go to the standard output.
 
 ### The sample
 
@@ -147,10 +151,10 @@ What each phase reads, and why some cost the same whatever changed:
 | `delta`     | `changes`            | The SQL rows changed since the marks; the layout, permission and published-snapshot containers listed (small)               |
 |             | `people`             | Every user, project and member row (small tables); the history of the changed surveys only                                  |
 |             | `surveys`            | Each survey's responses, markers and deletion copies changed since the marks, 16 surveys at once                            |
-|             | `events`             | The event log changed since the marks                                                                                       |
-|             | `views`, `files`     | The view and file containers listed (small), the changed blobs read                                                         |
+|             | `events`             | The event log changed since the marks (a sample that gained a survey: the whole log, once)                                  |
+|             | `views`, `files`     | The view and file containers listed (small), the changed blobs read; a survey copied whole: all its views and files         |
 | `reconcile` | the first four       | `surveys`, `projects`, `remap`, `people_views_files`: the SQL rows; the layout, permission, view and file containers listed |
-|             | `responses`          | The deletion copies since the last `reconcile`; the changed surveys' responses counted (ids only on a mismatch)             |
+|             | `responses`          | The deletion copies since the last `reconcile` (each id read once), their surveys' markers; the changed surveys counted     |
 | `verify`    | `stores`             | The token table and the file container (each a listing); the results account's table list, once                             |
 |             | `people`, `projects` | The user, project and member rows; the target's rows of each                                                                |
 |             | `surveys`            | Each survey's record; its responses and deletion copies since the last full verify; the changed surveys in full             |
@@ -202,6 +206,7 @@ is corrected and a `delta` or `copy --full` runs again.
 | `legacy_files_unlinked`                                           | `verify`: files the target holds that no copied record links any more (an image dropped, a response deleted). Kept, by decision   |
 | `deep_skipped_size`                                               | `verify`: a survey above `--deep-max-responses` was compared by counts and checksums, not response by response                    |
 | `reconcile_*`                                                     | `reconcile` removed rows, replaced a project's members, or maps a survey again (`reconcile_remapped_survey`)                      |
+| `reconcile_response_copied_again`                                 | A response a deletion copy names that the source holds again (posted again, same id): kept, and copied back                       |
 | `reconcile_count_skipped_size`                                    | `reconcile` did not count the responses of a very large survey inside the window                                                  |
 | `person_kept_unseeded`                                            | `reconcile` kept, and `verify` found, an account the migration did not create (an administrator, an account made at sign-in)      |
 | `person_held_elsewhere`                                           | `verify`: a named person the copy could not write, because another account holds the email or the surveyjs.io sign-in             |
@@ -233,8 +238,9 @@ is corrected and a `delta` or `copy --full` runs again.
   response (the old store cannot count rows without reading them); it compares what changed since the last full verify.
 - **What only the full `verify` sees.** When the old app deletes every response of a survey and its audit event is
   missing (the app writes it last, on a best-effort basis), neither `reconcile` nor the incremental `verify` notices;
-  the full `verify` counts the rows and does. A key changed on the site without a change time is not read by `delta`;
-  `verify` compares every key and reports it, and `copy` (or `copy --full`) writes it again.
+  the full `verify` counts the rows and does. A key changed or cleared on the site is taken by `delta` when the
+  person's change time moves; one changed without a change time is not read by `delta`: `verify` compares every key
+  and reports it, and `copy` (or `copy --full`) writes it again.
 
 ## Private data
 
@@ -268,14 +274,11 @@ pnpm migrate:hosted wipe --target <env file> --confirm <the database name or the
 
 Before the real runs:
 
-1. **The old servers' time zone.** Local times (a survey's created time, project and member times) are read as UTC until
-   it is known.
-2. **Whether the old app writes its SQL change-time columns in UTC.** A writer behind UTC is covered: the marks are the
-   latest change time each table holds, so its rows count from its own clock. A writer ahead of UTC stamps rows in the
-   database's future; the marks are capped at the database's own clock (`future_change_time` is reported), so those rows
-   keep reading as changed after the marks: `delta` reads them again and `verify` lists them as pending for as many
-   hours as the writer is ahead, after the freeze too. The window's `verify --no-pending` then fails on items it cannot
-   clear: settle this before the window.
-3. **The real column list of the old SQL tables.** Run `pnpm inspect:legacy-schema` against the real database, read
+1. **The real column list of the old SQL tables.** Run `pnpm inspect:legacy-schema` against the real database, read
    only, and compare it with what the mapping expects.
-4. **Read-only credentials:** a read-only SQL login; storage and file shares with read and list only.
+2. **Read-only credentials:** a read-only SQL login; storage and file shares with read and list only.
+
+Settled (2026-11-26): the old stores set their change times themselves (the database, the storage service), not the
+servers that write to them, so each store has one clock and the marks follow it; local times are read as UTC. `plan`
+and `copy` print the one thing left to check, the SQL change-time defaults and the server's offset from UTC, and `copy`
+refuses a default in local time on a server not on UTC.

@@ -11,6 +11,10 @@
  * - responses, completion markers and deletion copies of every migrated survey: each survey's
  *   tables queried by change time, in parallel;
  * - events: by change time; legacy files: those the changed records newly link.
+ * A survey the target lacks (new since the marks, or newly in the sample) is copied whole, and
+ * its saved views, Studio's own files and, in a sample, its events are taken whatever their
+ * time: what predates the marks was not the copy's when the survey was not copied.
+ * A person written again whose source row holds no access key any more loses the stored one.
  * A changed survey is copied again through `copy`'s own per-survey functions (the mapping and the
  * privacy rule exist once). At the end the marks move forward to those taken at the start; a run
  * that stops keeps the old marks, and the next one reads the same changes again (upserts).
@@ -183,6 +187,10 @@ export async function runDelta(
   );
   await target.upsertKeys(keys);
   await write("key", keys);
+  // A key the site cleared: the person's row holds none, so its stored key goes too.
+  const keyed = new Set(keys.map((key) => key.userId));
+  const keyless = [...written].filter((id) => !keyed.has(id));
+  if (keyless.length > 0) await target.deleteKeys(keyless);
   const targetProjects = new Set(await target.idsOf("projects"));
   let projectsWritten = 0;
   for (const { project, members } of named.projects) {
@@ -210,6 +218,8 @@ export async function runDelta(
   });
   /** The surveys the target holds after this run (their events, views and files follow). */
   const migrated = new Set<string>();
+  /** The surveys this run copied whole: their views, files and (sample) events of any time. */
+  const whole = new Set<string>();
   const counts = { added: 0, documents: 0, rows: 0 };
   /** For a mapping already reported by the copy. */
   const quiet = createReport();
@@ -220,6 +230,7 @@ export async function runDelta(
       // New since the marks (or not copied before): copied whole.
       if (await copier.copySurvey(row)) {
         migrated.add(surveyId);
+        whole.add(surveyId);
         counts.added += 1;
         report.note("delta_new_survey", { surveyId });
       }
@@ -234,7 +245,11 @@ export async function runDelta(
     let documents: WrittenDocuments | null = null;
     if (changed(row) || changedProjects.has(owner) || checkpoint === null) {
       // The checkpoint stays: it keeps the survey's answer names, and a stopped delta repeats.
-      documents = await copier.documents(row, { keepCheckpoint: true });
+      // Its answer names make the interim private list cover the responses' own keys too.
+      documents = await copier.documents(row, {
+        keepCheckpoint: true,
+        ...(known !== null && { answerNames: known }),
+      });
       // A row that maps to no survey any more: `reconcile` removes it.
       if (documents === null) return;
       counts.documents += 1;
@@ -294,8 +309,15 @@ export async function runDelta(
     await target.upsertEvents(batch);
     await write("event", batch);
   });
-  for await (const event of source.events(tablesSince)) {
-    if (sample && !migrated.has(event.surveyId.toLowerCase())) continue;
+  // A sample's copy took only its surveys' events: a survey new to it needs its earlier ones,
+  // so the table is read whole once (a full copy took every survey's events).
+  const earlierEvents = sample !== undefined && whole.size > 0;
+  for await (const event of source.events(earlierEvents ? undefined : tablesSince)) {
+    const surveyId = event.surveyId.toLowerCase();
+    // Read whole: another survey's event only when it changed after the marks.
+    const before = event.timestamp.getTime() <= tablesSince.getTime();
+    if (earlierEvents && before && !whole.has(surveyId)) continue;
+    if (sample && !migrated.has(surveyId)) continue;
     const rec = eventRec(event, report);
     if (rec !== null) await events.add(rec);
   }
@@ -307,20 +329,31 @@ export async function runDelta(
     await write("view", batch);
   });
   for await (const name of source.changedBlobs("views", blobsSince)) {
-    if (!migrated.has(name.split("/")[0]!.toLowerCase())) continue;
+    const surveyId = name.split("/")[0]!.toLowerCase();
+    if (!migrated.has(surveyId) || whole.has(surveyId)) continue;
     const blob = await source.viewBlob(name);
     if (blob === null) continue;
     const rec = mapView(name, blob.text, blob.lastModified, report);
     if (rec !== null) await views.add(rec);
   }
+  // A survey copied whole: every view of it, listed by its prefix.
+  for (const surveyId of whole) {
+    for await (const view of source.views(surveyId)) {
+      const blobName = `${view.surveyId}/${view.userId}/${view.view}`;
+      const rec = mapView(blobName, view.text, view.lastModified, report);
+      if (rec !== null) await views.add(rec);
+    }
+  }
   await views.flush();
   phase("views");
 
   for await (const blob of source.appFiles()) {
-    if (blob.properties.lastModified.getTime() <= blobsSince.getTime()) continue;
     const record = fileRecordFromBlob(blob.blobName, blob.properties, blob.metadata);
     // Not the app's, of no survey or of no migrated survey: `copy` reported those.
     if (record === null || record.surveyId === null || !migrated.has(record.surveyId)) continue;
+    // Changed after the marks, or of a survey copied whole (then of any time).
+    const changedSince = blob.properties.lastModified.getTime() > blobsSince.getTime();
+    if (!changedSince && !whole.has(record.surveyId)) continue;
     await copier.appFile(blob.blobName, record as SurveyFileRecord);
   }
   phase("files", "own files");

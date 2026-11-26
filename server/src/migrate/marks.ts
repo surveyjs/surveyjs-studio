@@ -1,12 +1,13 @@
 import type { Report } from "./map/report.js";
 import type { LegacySource } from "./source/index.js";
-import type { SqlTable } from "./source/sql.js";
+import type { ChangeTimeDefaults, SqlTable } from "./source/sql.js";
 
 /**
  * Where `delta` starts reading: per part of the source, the time from which a change counts as
  * new. Each part is judged by its own clock, never by the tool's: the SQL tables by their
- * `[timestamp]` column (written by the old app, so the latest one stands for its clock), the
- * Azure tables and blobs by their storage service's clock (which stamps their change times).
+ * `[timestamp]` column (stamped by the database itself, so the latest one stands for its clock;
+ * `changeTimeCheck` guards that), the Azure tables and blobs by their storage service's clock
+ * (which stamps their change times). One clock per store: no writer's own clock is involved.
  * Every mark is taken a safety margin back, so a write in flight when the marks were taken, or a
  * clock a little behind, is read again rather than missed.
  */
@@ -103,10 +104,45 @@ export function changedAfterMarks(
  * to the source's `since` filters. Inclusive at the mark: for tables, the millisecond before it;
  * for blobs, the last millisecond before the mark's second (blob times are whole seconds, so a
  * blob of that second may be newer than the mark). SQL rows compare to the mark itself: their
- * times are the old app's, and the margin covers a row stamped just before the marks.
+ * times are the database's, and the margin covers a row stamped just before the marks.
  */
 export function markOf(marks: HighWaterMarks, store: SourceStore): Date {
   if (store === "tables") return new Date(Date.parse(marks.tables) - 1);
   if (store === "blobs") return new Date(Math.floor(Date.parse(marks.blobs) / 1000) * 1000 - 1);
   return new Date(Date.parse(marks.sql[store]));
+}
+
+/** SQL functions that give the server's local time (a datetimeoffset stored in a datetime too). */
+const LOCAL_TIME = /\b(getdate|sysdatetime|sysdatetimeoffset|current_timestamp)\b/i;
+
+/** An offset in minutes as `+hh:mm` / `-hh:mm`. */
+const offsetText = (minutes: number): string => {
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+};
+
+/**
+ * The one assumption of the SQL marks left to check (the old stores stamp their own change
+ * times, product owner 2026-11-26): the change-time columns are stamped on UTC. `plan` and `copy`
+ * print the summary; `copy` refuses (`refusal`) when a column's default takes the server's local
+ * time on a server that is not on UTC, as those times would be hours off the marks' clock.
+ */
+export function changeTimeCheck(read: ChangeTimeDefaults): {
+  summary: string;
+  refusal: string | null;
+} {
+  const tables = Object.entries(read.defaults) as [SqlTable, string][];
+  const summary =
+    `SQL change times: the server's UTC offset ${offsetText(read.utcOffsetMinutes)}; ` +
+    `column defaults: ${tables.map(([table, value]) => `${table} ${value}`).join(", ")}.`;
+  const local = tables.filter(([, value]) => LOCAL_TIME.test(value)).map(([table]) => table);
+  const refusal =
+    read.utcOffsetMinutes !== 0 && local.length > 0
+      ? `the change-time default of ${local.join(", ")} takes the SQL server's local time, and the ` +
+        `server is not on UTC (offset ${offsetText(read.utcOffsetMinutes)}): the high-water ` +
+        "marks would be that far off. Ask the SurveyJS team before copying"
+      : null;
+  return { summary, refusal };
 }

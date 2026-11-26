@@ -10,6 +10,7 @@ import { localTableClient } from "../legacy/local-clients.js";
 import { replicaConfig } from "../legacy/replica-env.js";
 import { measureLegacyStores } from "../legacy/stats-source.js";
 import { readLegacyFixtures, type LegacyFixtures } from "../providers/azure-legacy/fixtures.js";
+import type { LegacySurveyRow } from "../providers/azure-legacy/rows.js";
 import { LARGE_SURVEY_RESPONSES } from "../providers/azure-legacy/large-survey.js";
 import {
   ERASABLE_ID,
@@ -25,6 +26,7 @@ import { createSurveyCopier, runCopy, type CopyOptions } from "./copy.js";
 import { runDelta } from "./delta.js";
 import { openDumpWriter } from "./dump.js";
 import { createReport, type Report } from "./map/report.js";
+import { mapSurvey } from "./map/surveys.js";
 import { runPlan } from "./plan.js";
 import { runReconcile } from "./reconcile.js";
 import {
@@ -833,6 +835,64 @@ describe("a file several surveys link", () => {
       expect(
         await into.target.existingKeys("legacy_files", [`asset/${LEGACY_ASSET_NAME}`]),
       ).toEqual([`asset/${LEGACY_ASSET_NAME}`]);
+    } finally {
+      await into.close();
+    }
+  });
+});
+
+describe("a copied survey's documents written again", () => {
+  it("keeps a response-only answer private from the documents' write when given the checkpoint's answer names", async () => {
+    const into = await newTarget();
+    try {
+      const g = (n: number) => `0a1b2c3d-0000-4000-8000-0000000000${String(n).padStart(2, "0")}`;
+      const owner = g(2);
+      const row = {
+        id: g(1),
+        name: "S",
+        userid: owner,
+        creatorid: owner,
+        postid: g(10),
+        resultid: g(11),
+        createdat: new Date("2020-01-01T00:00:00.000Z"),
+        timestamp: new Date("2021-01-01T00:00:00.000Z"),
+        ispublished: 1,
+        isarchived: 0,
+        allowaccessresult: 1,
+        storeipaddress: "0",
+        usecookies: 0,
+        publishid: null,
+        theme: null,
+      } satisfies LegacySurveyRow & { theme: string | null };
+      const ctx = {
+        projects: new Set<string>(),
+        projectsWithoutMembers: new Set<string>(),
+        people: new Set([owner]),
+        legacyUsers: new Set([owner]),
+        report: createReport(),
+      };
+      const definition = JSON.stringify({ pages: [{ elements: [{ type: "text", name: "q1" }] }] });
+      // As the copy left it: no column layout, nothing private; the responses use `secret`, a
+      // name the definition lacks (the checkpoint keeps it).
+      await into.target.upsertSurvey(mapSurvey(row, definition, null, null, ctx)!);
+      expect(await into.target.privateQuestionsOf(row.id)).toEqual([]);
+
+      // Then a column layout listing q1 only, new columns hidden: `secret` is private under it.
+      const columns = JSON.stringify({
+        columns: [{ name: "q1", visibility: 0 }],
+        newcolumnsvisibility: 2,
+      });
+      const source = {
+        definitionText: async () => definition,
+        permissionsText: async () => null,
+        layoutText: async (_id: string, kind: string) => (kind === "columns" ? columns : null),
+        historyNewest: async () => [],
+      } as unknown as LegacySource;
+      const copier = createSurveyCopier(source, into.target, { ctx, batchSize: 500, now });
+      // What delta and reconcile call first; finish() comes only after the new rows are read,
+      // and until then the stored list is what the app serves.
+      await copier.documents(row, { keepCheckpoint: true, answerNames: ["q1", "secret"] });
+      expect(await into.target.privateQuestionsOf(row.id)).toContain("secret");
     } finally {
       await into.close();
     }

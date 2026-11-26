@@ -160,6 +160,8 @@ describe("migrate:hosted against the local replica", () => {
     const result = capture();
     expect(await cli(["plan", "--report", report], result.io)).toBe(0);
     expect(result.out).toMatch(/^Plan: \d+ users/m);
+    // The replica's SQL server is on UTC and its change-time columns have no defaults.
+    expect(result.out).toContain("SQL change times: the server's UTC offset +00:00;");
     const written = JSON.parse(readFileSync(report, "utf8")) as {
       plan: { volumes: { surveys: number } };
     };
