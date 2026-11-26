@@ -167,6 +167,34 @@ describe("privateAnswers", () => {
     expect(privateAnswers(list, layout, answers)?.publicNames).toEqual(["HappendAt"]);
   });
 
+  it("names the only public names when a name no one lists is private, the listed ones included", () => {
+    // No layout, or new columns shown: any other name is public.
+    expect(privateAnswers([{ name: "a", isPublic: false }], undefined, answers)?.publicOnly).toBe(
+      null,
+    );
+    expect(privateAnswers(undefined, layout, answers)?.publicOnly).toBeNull();
+    // New columns hidden: only the listed shown columns and the answers the rule keeps public.
+    const hiding = {
+      ...layout,
+      columns: [...layout.columns, col("k", 0)],
+      newcolumnsvisibility: 1,
+    };
+    expect(sorted(privateAnswers(undefined, hiding, answers)?.publicOnly)).toEqual([
+      "HappendAt",
+      "a",
+      "k",
+    ]);
+    // Both settings: the list's public names the layout lists, a response-only key "k" too.
+    const both = { ...layout, columns: [...layout.columns, col("k", 2)] };
+    const list = [
+      { name: "a", isPublic: true },
+      { name: "k", isPublic: true },
+      { name: "c", isPublic: true },
+    ];
+    expect(sorted(privateAnswers(list, both, answers)?.publicOnly)).toEqual(["a", "k"]);
+    expect(privateAnswers([], both, answers)?.publicOnly).toEqual([]);
+  });
+
   it("is null when the layout cannot be read, with a list or without", () => {
     expect(privateAnswers(undefined, [], answers)).toBeNull();
     expect(privateAnswers([], { columns: [col("a", true)] }, answers)).toBeNull();

@@ -8,7 +8,8 @@ Accepted. The product owner has not confirmed R1 (a per-survey list of private q
 question names, and the formula guard), R9 (public results are served whatever the published and archived
 flags say), R14 (deleting results asks for the survey name, then a browser confirm), leaving the legacy
 `postdelete` table to Delete Results, and the choice to leave the list out of `listSurveys` items (see "To
-confirm").
+confirm"). [Changed 2026-11-26](#changed-2026-11-26-public-results-on-the-old-stores) (public results on the old
+stores follow the old public results' rule).
 
 ## Context
 
@@ -230,3 +231,32 @@ written.
 - **The scan of large tables on Azure** (the cost of export and of public results, layout gap 8): measure on real
   volumes (later: Step 14 did not measure it).
 - **A locale picker and a visual match** with the old results page: Steps 13 and later.
+
+## Changed 2026-11-26: public results on the old stores
+
+Found by the migration's end-to-end run and fixed by decision of the product owner (2026-11-26). R1 read the old
+permissions list alone ("written for private entries only", "the old readers treat a missing entry as public"). The
+old service's public results also apply the survey's old results column layout, so Studio showed columns the old
+service hid: a column the layout hides from public reads, and the submit time. The migration's rule (ADR 0044,
+"Changed 2026-11-26: the privacy rule") is now Studio's rule on the old stores too, from the one shared function
+(`privateAnswers` in the `column-layout` package):
+
+- **Reading.** The private questions come from the list and the layout: without a layout, the list's private
+  entries (as before); a layout without a list, the layout's rule; both, only a name the list marks public **and**
+  the layout lists stays public, everything else is private, the submit time (`HappendAt`) and `InstanceId`
+  included. An unreadable setting fails closed, as an unreadable list did: public results answer an error and the
+  private Summary offers no toggle. Only the stores that hold such a layout (the hosted edition before the
+  migration) do this; elsewhere there is no layout and R1 is unchanged.
+- **Filtering.** With both settings, `getPublicResults` serves only the answer keys the rule makes public, so a key
+  that only responses hold (none of the definition's questions) is left out too, and `survey.privateQuestions` can
+  name `HappendAt`; the public Table then has no Submitted column. Items keep `submittedAt`: the cursor and the
+  `from` and `till` windows need it, and the bridge already drops `HappendAt` by that name.
+- **Saving.** A save writes the list in the old service's full form: every question of the definition with
+  `isPublic` true or false, then the stored list's other names (public unless now private, so a mark the old site
+  saved stays), then any other private name. A list of private entries only would leave nothing public under both
+  settings, which the old public results then served.
+- **The limit.** With both settings, a question the layout does not list cannot be made public. `getSurvey` and
+  `updateSurvey` name such questions in `settings.lockedPrivateResultQuestions` (read-only); the private Summary
+  shows them as private with a one-line hint. `updateSurvey` answers the list as the store reads it back after a
+  save. A layout without a list becomes "both" with the first save, so a question it does not list turns private
+  then, as on the old site.

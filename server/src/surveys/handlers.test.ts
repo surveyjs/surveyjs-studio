@@ -372,6 +372,56 @@ describe("updateSurvey", () => {
   });
 });
 
+describe("private questions the old results layout locks (ADR 0016, changed 2026-11-26)", () => {
+  /** A store with the old rule: q3 is locked private; a save keeps it so, as the old stores do. */
+  const withLock = (p: ProviderSet): ProviderSet => ({
+    ...p,
+    views: {
+      ...p.views,
+      getResultsPrivacy: async (surveyId) => {
+        const stored = await p.views.getPrivateQuestions(surveyId);
+        return {
+          privateQuestions: [...new Set([...stored, "q3"])],
+          publicOnly: null,
+          lockedQuestions: ["q3"],
+        };
+      },
+    },
+  });
+
+  it("answers getSurvey with the locked questions, named in the list too", async () => {
+    const { server, headers, providers } = await start(withLock);
+    const id = ownPersonal?.id ?? "";
+    await providers.views.savePrivateQuestions(id, ["q1"]);
+    const res = await server.inject({ url: `/api/v1/surveys/${id}`, headers });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ settings: unknown }>().settings).toMatchObject({
+      privateResultQuestions: ["q1", "q3"],
+      lockedPrivateResultQuestions: ["q3"],
+    });
+  });
+
+  it("answers a saved list as the store reads it back: a locked question stays private", async () => {
+    const { server, headers } = await start(withLock);
+    const res = await patch(server, headers, ownPersonal?.id, {
+      settings: { privateResultQuestions: ["q1"] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ settings: unknown }>().settings).toMatchObject({
+      privateResultQuestions: ["q1", "q3"],
+      lockedPrivateResultQuestions: ["q3"],
+    });
+  });
+
+  it("leaves the field out on a store without the old layout", async () => {
+    const { server, headers } = await start();
+    const res = await server.inject({ url: `/api/v1/surveys/${ownPersonal?.id}`, headers });
+    expect(res.json<{ settings: object }>().settings).not.toHaveProperty(
+      "lockedPrivateResultQuestions",
+    );
+  });
+});
+
 describe("a private-question list that cannot be read", () => {
   const unreadable = (p: ProviderSet): ProviderSet => ({
     ...p,

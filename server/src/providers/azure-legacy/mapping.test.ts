@@ -11,6 +11,7 @@ import {
   privateQuestionsFromLegacy,
   privateQuestionsToLegacy,
   projectFromLegacy,
+  resultsPrivacyFromLegacy,
   publishedFlag,
   responseFromLegacy,
   surveyFromLegacy,
@@ -781,11 +782,100 @@ describe("privateAnswersFromLegacy", () => {
   });
 });
 
+describe("resultsPrivacyFromLegacy", () => {
+  // q2 holds its answer under "v2"; "k" is a key only responses hold.
+  const definition = {
+    elements: [
+      { type: "text", name: "q1" },
+      { type: "text", name: "q2", valueName: "v2" },
+      { type: "text", name: "q3" },
+    ],
+  };
+  const layout = (newcolumnsvisibility: number) =>
+    JSON.stringify({
+      columns: [
+        { name: "HappendAt", visibility: 0 },
+        { name: "q1", visibility: 0 },
+        { name: "q2", visibility: 2 },
+        { name: "k", visibility: 0 },
+      ],
+      newcolumnsvisibility,
+    });
+  const sorted = (names: readonly string[] | null) => (names ? [...names].sort() : names);
+
+  it("without a layout: the list's private entries, any other key public, nothing locked", () => {
+    const list = '[{"name":"q2","isPublic":false},{"name":"q1","isPublic":true}]';
+    expect(resultsPrivacyFromLegacy(list, null, definition)).toEqual({
+      privateQuestions: ["q2"],
+      publicOnly: null,
+      lockedQuestions: [],
+      unreadable: [],
+    });
+    expect(resultsPrivacyFromLegacy(null, null, definition)).toEqual({
+      privateQuestions: [],
+      publicOnly: null,
+      lockedQuestions: [],
+      unreadable: [],
+    });
+  });
+
+  it("with a layout and no list: the layout rule, among the definition's names and keys", () => {
+    const shown = resultsPrivacyFromLegacy(null, layout(0), definition);
+    expect(sorted(shown.privateQuestions)).toEqual(["InstanceId", "q2"]);
+    expect(shown.publicOnly).toBeNull();
+    expect(shown.lockedQuestions).toEqual([]);
+    // New columns hidden: q3 and the valueName key are not listed, so only the listed shown names stay.
+    const hiding = resultsPrivacyFromLegacy(null, layout(1), definition);
+    expect(sorted(hiding.privateQuestions)).toEqual(["InstanceId", "q2", "q3", "v2"]);
+    expect(sorted(hiding.publicOnly)).toEqual(["HappendAt", "k", "q1"]);
+  });
+
+  it("with both: public only what the list marks public and the layout lists; the unlisted questions locked", () => {
+    const list = JSON.stringify(["q1", "q2", "q3", "k"].map((name) => ({ name, isPublic: true })));
+    const both = resultsPrivacyFromLegacy(list, layout(0), definition);
+    expect(sorted(both.privateQuestions)).toEqual(["HappendAt", "InstanceId", "q3", "v2"]);
+    expect(sorted(both.publicOnly)).toEqual(["k", "q1", "q2"]);
+    expect(both.lockedQuestions).toEqual(["q3"]);
+    // A list of private entries only (as Studio wrote it) leaves nothing public.
+    const studio = resultsPrivacyFromLegacy(
+      '[{"name":"q2","isPublic":false}]',
+      layout(0),
+      definition,
+    );
+    expect(studio.publicOnly).toEqual([]);
+    expect(studio.lockedQuestions).toEqual(["q3"]);
+  });
+
+  it("names an unreadable setting", () => {
+    expect(resultsPrivacyFromLegacy("{}", null, definition).unreadable).toEqual(["permissions"]);
+    expect(resultsPrivacyFromLegacy(null, "[]", definition).unreadable).toEqual(["columns"]);
+  });
+});
+
 describe("privateQuestionsToLegacy", () => {
-  it("writes each name as a private element, in order", () => {
+  it("writes each name as a private element, in order, for a survey without questions", () => {
     expect(privateQuestionsToLegacy(["q2", "q1"])).toBe(
       '[{"name":"q2","isPublic":false},{"name":"q1","isPublic":false}]',
     );
     expect(privateQuestionsToLegacy([])).toBe("[]");
+  });
+
+  it("writes the old service's full form: every question of the definition public or not", () => {
+    expect(privateQuestionsToLegacy(["q2"], ["q1", "q2", "q3"])).toBe(
+      '[{"name":"q1","isPublic":true},{"name":"q2","isPublic":false},{"name":"q3","isPublic":true}]',
+    );
+  });
+
+  it("keeps the stored list's other names, public unless now private, then the other private names", () => {
+    const stored =
+      '﻿[{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":false},{"name":"q1","isPublic":false},{"isPublic":true},"x"]';
+    expect(privateQuestionsToLegacy(["k", "q2"], ["q1", "q2"], stored)).toBe(
+      '[{"name":"q1","isPublic":true},{"name":"q2","isPublic":false},' +
+        '{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":true},{"name":"k","isPublic":false}]',
+    );
+    // A stored text that is no list adds nothing.
+    expect(privateQuestionsToLegacy(["q1"], ["q1"], "nope")).toBe(
+      '[{"name":"q1","isPublic":false}]',
+    );
   });
 });

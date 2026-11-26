@@ -140,6 +140,13 @@ export interface PrivateAnswers {
    * later included, is private whatever the list says. Null when the settings are not both there.
    */
   listedUnderPermissions: ReadonlySet<string> | null;
+  /**
+   * When a name none of the inputs names is private (rule 3, and rule 2 when the layout's new
+   * columns are not shown): every name that stays public, the names the layout lists included.
+   * A caller that cannot list every answer (a response-only key) shows only these. Null otherwise:
+   * then any name not in `privateNames` is public.
+   */
+  publicOnly: string[] | null;
 }
 
 /** The permission entries' names with `isPublic` exactly `true`, and exactly `false`. */
@@ -182,8 +189,13 @@ export function privateAnswers(
   const answers = [...new Set([...answerNames, ...TIME_AND_ID])];
   let privateNames: string[];
   let listedUnderPermissions: ReadonlySet<string> | null = null;
+  /** The names that can be public when any other name is private; null when it is public. */
+  let candidates: Iterable<string> | null = null;
   if (permissions === undefined) {
     privateNames = read === undefined ? [] : layoutRule(read, answers);
+    if (read?.hasColumns && read.newColumns !== VISIBLE) {
+      candidates = new Set([...answers, ...read.listed.keys()]);
+    }
   } else if (read === undefined || !read.hasColumns) {
     privateNames = [...permissionNames(permissions).privateNames];
   } else {
@@ -194,11 +206,13 @@ export function privateAnswers(
     const named = new Set([...answers, ...listed, ...marked.publicNames, ...marked.privateNames]);
     privateNames = [...named].filter((name) => !isPublic(name));
     listedUnderPermissions = listed;
+    candidates = named;
   }
   const hidden = new Set(privateNames);
   return {
     privateNames,
     publicNames: answers.filter((name) => !hidden.has(name)),
     listedUnderPermissions,
+    publicOnly: candidates === null ? null : [...candidates].filter((name) => !hidden.has(name)),
   };
 }

@@ -8,8 +8,8 @@ import {
   UnmappableLegacyRowError,
 } from "../../providers/azure-legacy/mapping.js";
 import type { LegacySurveyRow } from "../../providers/azure-legacy/rows.js";
+import { answerNamesOf } from "../../results/definition.js";
 import type { SurveyRec } from "../records.js";
-import { answerNamesOf } from "./layout.js";
 import type { Report } from "./report.js";
 import { withoutBom, withoutNul } from "./text.js";
 

@@ -24,6 +24,7 @@ import { createSurveyAccess, notFound } from "../surveys/access.js";
 import { availableSurvey, surveyNotAvailable } from "./availability.js";
 import { decodeResultsCursor, encodeResultsCursor } from "../paging/cursor.js";
 import { privateKeysOf, withoutKeys } from "./definition.js";
+import { resultsPrivacyOf } from "./privacy.js";
 import { csvColumns } from "./csv.js";
 import {
   EXPORT_PAGE_SIZE,
@@ -359,12 +360,15 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
       if (!survey?.settings.publicResults) throw surveyNotAvailable();
       const after =
         page.cursor === undefined ? undefined : decodeResultsCursor(page.cursor, survey.id);
-      const [definition, privateQuestions] = await Promise.all([
+      const [definition, { privateQuestions, publicOnly }] = await Promise.all([
         surveys.getDefinition(survey.id),
-        views.getPrivateQuestions(survey.id),
+        resultsPrivacyOf(views, survey.id),
       ]);
       if (!definition) throw surveyNotAvailable();
       const hidden = privateKeysOf(definition.content, privateQuestions);
+      // On the old stores with both old settings, a key the rule does not make public (a
+      // response-only key too) stays out (ADR 0016, changed 2026-11-26).
+      const shown = publicOnly === null ? null : new Set(publicOnly);
       const { items, next } = await results.listResponsePage(survey, {
         limit: page.limit,
         completedOnly: true,
@@ -380,7 +384,7 @@ export function createResultsService(options: ResultsServiceOptions): ResultsSer
         },
         items: items.map((response) => ({
           submittedAt: response.submittedAt,
-          data: withoutKeys(response.data, hidden),
+          data: withoutKeys(response.data, hidden, shown),
         })),
         nextCursor: next ? encodeResultsCursor(next, survey.id) : null,
       };

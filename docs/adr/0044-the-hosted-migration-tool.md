@@ -360,3 +360,7 @@ survey whose public results are on and end with no public answer under this case
 of the column-layout package, shared by `copy`, `delta`, `reconcile` and `verify`, so `verify` cannot disagree with
 what the copy writes. Without a layout, a permissions list still hides its private entries, though the old public
 results then hid nothing: stricter, as before.
+
+Studio on the old stores applies the same function since 2026-11-26 and now saves the permissions in the old service's
+full form, so a list Studio writes from then on keeps the owner's public questions public ([ADR 0016](0016-results-details-exports-and-public-results.md#changed-2026-11-26-public-results-on-the-old-stores)).
+Lists written before stay as described above.

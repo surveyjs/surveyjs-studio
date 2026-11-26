@@ -1516,6 +1516,12 @@ export interface paths {
          *     `survey.privateQuestions` names them. Each page includes the survey definition so a
          *     dashboard can render it.
          *
+         *     Hosted edition, surveys still on the old service's stores: the old public results' rule
+         *     applies. With the survey's old results layout and a saved list, only the answer keys that
+         *     both make public are served, so a key only responses hold is left out too; the list can
+         *     then name `HappendAt` and `InstanceId`. When it names `HappendAt`, a dashboard hides the
+         *     submission time (items keep `submittedAt` for paging and `from` and `till`).
+         *
          *     `from` and `till` narrow the list to a range of `submittedAt`, both bounds exclusive. For a
          *     response saved in parts, `submittedAt` is the time of its first save: a response started
          *     before `from` is left out even when it was completed after it, and one started before
@@ -2016,7 +2022,18 @@ export interface components {
             legacyPublishId: string | null;
             /** @description Only on `listSurveys` items, and only with `include=theme`; `null` when the survey has no theme. */
             theme?: components["schemas"]["SurveyTheme"] | null;
-            settings: components["schemas"]["SurveySettings"] & unknown;
+            settings: components["schemas"]["SurveySettings"] & unknown & {
+                /**
+                 * @description Read-only, hosted edition, surveys still on the old service's stores: the
+                 *     questions that stay private whatever `privateResultQuestions` says, because the
+                 *     survey's old results layout does not list them (with that layout and a saved
+                 *     list, only a question the layout lists can be public). `privateResultQuestions`
+                 *     names them too; a client shows them as private and offers no way to make them
+                 *     public. Absent when there are none and when `privateResultQuestions` is absent;
+                 *     a patch cannot change it.
+                 */
+                lockedPrivateResultQuestions?: string[];
+            };
         };
         SurveyCreate: {
             name?: components["schemas"]["SurveyName"];

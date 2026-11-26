@@ -307,20 +307,46 @@ export interface ViewStore {
   /**
    * The names of the survey's questions hidden from public results (R1), in stored order, no
    * duplicates; [] when none are stored, for an unknown survey and for a non-GUID id. Ids match
-   * case-insensitively. azure-legacy: blob `surveyresultpermissions/{surveyId}` read with the legacy
-   * defaults (`privateQuestionsFromLegacy`); no blob is []. It fails closed: a blob that is empty or
-   * not a JSON array (a save between its create and its append, or one that failed half way) is
-   * read once more, then rejects with a LegacyStoreError (operation name and codes only), so callers
-   * never take an unreadable list for "every question public". memory: the seed's
-   * `privateResultQuestions`, then saves; it never rejects for this.
+   * case-insensitively. azure-legacy: `getResultsPrivacy(surveyId).privateQuestions`. memory: the
+   * seed's `privateResultQuestions`, then saves; it never rejects for this.
    */
   getPrivateQuestions(surveyId: string): Promise<string[]>;
   /**
    * Replaces the list (`[]` makes every question public). Rejects (nothing written) for a non-GUID
    * id; does not check that the survey exists and does not touch the survey record. Deleted with the
-   * survey, not copied by a clone, kept by `ResultStore.deleteAll`.
+   * survey, not copied by a clone, kept by `ResultStore.deleteAll`. azure-legacy: the blob
+   * `surveyresultpermissions/{surveyId}` in the old service's full form (`privateQuestionsToLegacy`).
    */
   savePrivateQuestions(surveyId: string, names: readonly string[]): Promise<void>;
+  /**
+   * azure-legacy only (ADR 0016, changed 2026-11-26): the private questions by the old public
+   * results' rule (`privateAnswers`) on the survey's permissions blob and its old results column
+   * layout (`getLayout(surveyId, "columns")`), among the definition's question names and answer
+   * keys, `HappendAt` and `InstanceId` included. Without a layout this is the blob's private
+   * entries, read with the legacy defaults. It fails closed: a permissions blob that is empty or
+   * not a JSON array (a save between its create and its append, or one that failed half way) is
+   * read once more, then rejects with a LegacyStoreError, as does a layout the old calculation
+   * failed on, so callers never take an unreadable setting for "every question public". For an
+   * unknown survey or a non-GUID id: no private question.
+   */
+  getResultsPrivacy?(surveyId: string): Promise<ResultsPrivacy>;
+}
+
+/** What a store's rule keeps out of a survey's public results (`ViewStore.getResultsPrivacy`). */
+export interface ResultsPrivacy {
+  /** As `getPrivateQuestions`. */
+  readonly privateQuestions: string[];
+  /**
+   * When every key the rule does not name is private: the only answer keys public results may
+   * show (a response-only key is shown only when listed here). Null: any key is public unless
+   * `privateQuestions` hides it.
+   */
+  readonly publicOnly: string[] | null;
+  /**
+   * The definition's questions a save cannot make public: with both old settings, those the old
+   * layout does not list. `privateQuestions` names them.
+   */
+  readonly lockedQuestions: string[];
 }
 
 export interface SurveyStore {

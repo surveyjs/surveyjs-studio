@@ -378,7 +378,8 @@ deleted, the tables kept, the private list in the old blob) are in
   `response` before the rows are deleted; the editor's assets stay. The survey deletion still passes no kind.
 - **The public-question list** (`writePrivateQuestions(blobs, surveyId, names)`). It writes the append blob
   `surveyresultpermissions/{surveyId}` with the old JSON, `[{ "name": "…", "isPublic": false }]`, **one element for
-  each private question** and none for public ones (`privateQuestionsToLegacy`). The blob is replaced as the other
+  each private question** and none for public ones (`privateQuestionsToLegacy`). Changed on 2026-11-26: the full
+  form, every question public or not ([ADR 0016](0016-results-details-exports-and-public-results.md#changed-2026-11-26-public-results-on-the-old-stores)). The blob is replaced as the other
   append blobs are (`replaceAppendBlob`); a `404` for the container runs `createIfNotExists()` and the write once
   more. A failure is `LegacyStoreError("public questions save")`.
 

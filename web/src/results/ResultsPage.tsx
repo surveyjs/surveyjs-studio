@@ -137,6 +137,12 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
     ) {
       content = LOADING;
     } else {
+      // Without a readable list (the field is absent) nothing may save one built from an unknown
+      // state, so the toggle is not offered.
+      const toggle =
+        tab === "summary" &&
+        survey.permissions.canModify &&
+        survey.settings.privateResultQuestions !== undefined;
       const props: ResultsWidgetProps = {
         surveyId,
         definition: definition.data.content,
@@ -144,18 +150,21 @@ export function ResultsPage({ surveyId, tab }: { surveyId: string; tab: ResultsT
         savedState: view.data,
         onStateChange: stateChange(tab),
         privateQuestions: survey.settings.privateResultQuestions ?? [],
-        // Without a readable list (the field is absent) nothing may save one built from an
-        // unknown state, so the toggle is not offered.
-        ...(tab === "summary" &&
-        survey.permissions.canModify &&
-        survey.settings.privateResultQuestions !== undefined
-          ? { onPrivateQuestionsChange: privacy.change }
-          : {}),
+        ...(toggle ? { onPrivateQuestionsChange: privacy.change } : {}),
       };
+      // On the old stores a question the old results layout does not list stays private.
+      const locked = toggle ? (survey.settings.lockedPrivateResultQuestions ?? []) : [];
       content = (
-        <Suspense fallback={LOADING}>
-          {tab === "summary" ? <SummaryView {...props} /> : <TableView {...props} />}
-        </Suspense>
+        <>
+          {locked.length > 0 && (
+            <p className="v2-class---paragraph">
+              {`The survey's old results layout keeps ${locked.join(", ")} private: they cannot be made public.`}
+            </p>
+          )}
+          <Suspense fallback={LOADING}>
+            {tab === "summary" ? <SummaryView {...props} /> : <TableView {...props} />}
+          </Suspense>
+        </>
       );
     }
   }

@@ -1,4 +1,5 @@
 import { privateAnswers, type PrivateAnswers } from "@surveyjs-studio/column-layout";
+import { answerNamesOf, questionsOf } from "../../results/definition.js";
 import { isUploadLegacyName } from "../../domain/legacy-file.js";
 import { FILE_ID_PATTERN, surveyIdOfFile } from "../../domain/file-id.js";
 import type {
@@ -24,6 +25,7 @@ import type {
   LegacyUserRow,
 } from "./rows.js";
 import { GUID } from "../../domain/guid.js";
+import type { ResultsPrivacy } from "../types.js";
 
 /**
  * Pure legacy -> domain mapping. Rules: docs/architecture/legacy-data-layout.md section 9.
@@ -412,7 +414,52 @@ export function privateAnswersFromLegacy(
   return { ...result, unreadable };
 }
 
-/** The blob text for a list of private question names. */
-export function privateQuestionsToLegacy(names: readonly string[]): string {
-  return JSON.stringify(names.map((name) => ({ name, isPublic: false })));
+/**
+ * Studio's private questions on the old stores (`ViewStore.getResultsPrivacy`), by the old public
+ * results' rule (`privateAnswersFromLegacy`) on the permissions and column layout texts (as
+ * there), among the definition's question names and answer keys (`answerNamesOf`). `lockedQuestions`:
+ * with both settings, the definition's questions the layout does not list.
+ */
+export function resultsPrivacyFromLegacy(
+  permissionsText: string | null,
+  layoutText: string | null,
+  definition: SurveyDefinition,
+): ResultsPrivacy & { unreadable: PublicResultsSetting[] } {
+  const questions = questionsOf(definition).map(({ name }) => name);
+  const rule = privateAnswersFromLegacy(
+    permissionsText,
+    layoutText,
+    new Set([...questions, ...answerNamesOf(definition)]),
+  );
+  const listed = rule.listedUnderPermissions;
+  return {
+    privateQuestions: rule.privateNames,
+    publicOnly: rule.publicOnly,
+    lockedQuestions: listed === null ? [] : questions.filter((name) => !listed.has(name)),
+    unreadable: rule.unreadable,
+  };
+}
+
+/**
+ * The permissions blob text for a list of private names, in the old service's full form (what its
+ * Summary saved): each of `questionNames` (the definition's) with `isPublic` true or false, then
+ * the other names of the `stored` text (one BOM stripped; ignored when no JSON array), public
+ * unless now private, so a mark the old site saved stays, then the other private names. With
+ * both old settings only a name marked public is public, so a list of private entries only would
+ * make every answer private.
+ */
+export function privateQuestionsToLegacy(
+  names: readonly string[],
+  questionNames: readonly string[] = [],
+  stored: string | null = null,
+): string {
+  const hidden = new Set(names);
+  const storedNames: string[] = [];
+  for (const element of (stored === null ? null : permissionsListFromLegacy(stored)) ?? []) {
+    if (typeof element !== "object" || element === null || Array.isArray(element)) continue;
+    const { name } = element as Record<string, unknown>;
+    if (typeof name === "string" && name !== "") storedNames.push(name);
+  }
+  const written = new Set([...questionNames, ...storedNames, ...names]);
+  return JSON.stringify([...written].map((name) => ({ name, isPublic: !hidden.has(name) })));
 }
