@@ -193,6 +193,17 @@ const allDeleted =
     },
   });
 
+/** A source whose result table no longer holds the response (deleted, its copy written). */
+const responseGone =
+  (postId: string, responseId: string) =>
+  (source: LegacySource): LegacySource => ({
+    ...source,
+    async response(post, id) {
+      const gone = post.toLowerCase() === postId && id.toLowerCase() === responseId.toLowerCase();
+      return gone ? null : source.response(post, id);
+    },
+  });
+
 const both =
   (...wraps: ((source: LegacySource) => LegacySource)[]) =>
   (source: LegacySource): LegacySource =>
@@ -842,7 +853,11 @@ describe("verify against a copy of the local replica", () => {
       // Marks taken after the deletion, which no delta applied.
       const later = new Date(Date.now() + 1000).toISOString();
       await copied.target.state.set("marks", marksAt(later), later);
-      const { ok, json } = await verify({ full: false });
+      // The deleted row is gone from the result table (a row posted again is not deleted).
+      const { ok, json } = await verify({
+        full: false,
+        wrap: responseGone(CAMPAIGN_POST, responseId),
+      });
       expect(ok).toBe(false);
       expect(findings(json.differences, "deletions")).toEqual([
         { check: "deletions", ids: { surveyId: CAMPAIGN }, counts: { source: 1, kept: 1 } },
@@ -853,6 +868,51 @@ describe("verify against a copy of the local replica", () => {
       await copied.target.state.set("marks", marks, new Date().toISOString());
     }
   });
+
+  it("is green incrementally for a response a deletion copy names while the source holds it again, as reconcile keeps it", async () => {
+    // Deleted, then posted again under the same id (an Idempotency-Key gives the same id): the
+    // copy names a row the result table holds again, which `reconcile` keeps.
+    const name = "postdelete33333333000040008000a00000000004";
+    const existed = fixtures.tables.some((t) => t.account === "results" && t.name === name);
+    const table = localTableClient(
+      config.resultsStorageConnectionString,
+      name,
+      "LEGACY_RESULTS_STORAGE_CONNECTION_STRING",
+    );
+    const responseId = fixtures.resultsByTable[CAMPAIGN_TABLE]![0]!.id;
+    const copyId = "77777777-0000-4000-8000-a0000000beef";
+    const into = await newTarget();
+    const source = openReplicaSource(fixtures);
+    try {
+      await copyFromReplica(into, fixtures, { marginMs: 0 });
+      expect((await verify({ into, deepSample: 0 })).ok).toBe(true);
+      await table.createTable();
+      await table.createEntity({
+        partitionKey: "*",
+        rowKey: copyId,
+        id: copyId,
+        instanceid: responseId,
+        happendat: new Date(),
+        result: JSON.stringify({ satisfaction: 1 }),
+      });
+      // The clock of the marks counts whole seconds: a second later, the copy is before them.
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      // The window: the final delta, the final reconcile, then the incremental verify.
+      await runDelta(source, into.target, { report: createReport(), marginMs: 0 });
+      await runReconcile(source, into.target, { report: createReport(), full: false, marginMs: 0 });
+      expect(
+        await into.target.existingKeys("survey_responses", [responseId.toLowerCase()], CAMPAIGN),
+      ).toEqual([responseId.toLowerCase()]);
+      const { ok, json } = await verify({ into, full: false });
+      expect(json.differences).toEqual([]);
+      expect(ok).toBe(true);
+    } finally {
+      await table.deleteEntity("*", copyId).catch(() => undefined);
+      if (!existed) await table.deleteTable().catch(() => undefined);
+      await source.close();
+      await into.close();
+    }
+  }, 180_000);
 
   it("walks no survey above the size cap response by response, and notes it", async () => {
     const { ok, json } = await verify({ deepMaxResponses: LARGE_SURVEY_RESPONSES - 1 });
@@ -1462,7 +1522,7 @@ describe("verify as the go/no-go: deletions, pending and the window", () => {
       const copyOf =
         (deletedAt: Date, timestamp: Date) =>
         (source: LegacySource): LegacySource => ({
-          ...source,
+          ...responseGone(CAMPAIGN_POST, responseId)(source),
           async resultTables() {
             return (await source.resultTables()).add(`postdelete${CAMPAIGN_TABLE.slice(4)}`);
           },

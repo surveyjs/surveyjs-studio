@@ -23,12 +23,14 @@
  * - **Incremental** (in the window, after the final `delta` and `reconcile`): what changed since
  *   the last full verify: the changed surveys in full (their responses by the new rows, their
  *   private questions with the checkpoint's answer names), every survey's new responses and
- *   deletions, the responses and markers of a survey whose responses were all deleted since
- *   (the old app's event), the markers of one with a deletion copy since, the small tables
- *   (surveys, projects, members, people, keys) in full, and the key sets `reconcile` compares
- *   (layouts, permissions records, saved views, Studio's own files), strictly. A `delta` with no `reconcile` after it
- *   is a difference. A full recount of every response is not part of it, nor is the history of
- *   a survey that did not change: the authors it names are read from the target's history.
+ *   deletions (not a response the result table holds again, posted again after its deletion,
+ *   which `reconcile` keeps), the responses and markers of a survey whose responses were all
+ *   deleted since (the old app's event), the markers of one with a deletion copy since, the
+ *   small tables (surveys, projects, members, people, keys) in full, and the key sets
+ *   `reconcile` compares (layouts, permissions records, saved views, Studio's own files),
+ *   strictly. A `delta` with no `reconcile` after it is a difference. A full recount of every
+ *   response is not part of it, nor is the history of a survey that did not change: the authors
+ *   it names are read from the target's history.
  *
  * Surveys, people and projects are compared `concurrency` at a time (default 16). An account the
  * target holds that the migration did not seed (an administrator, one made at sign-in) is noted,
@@ -1099,7 +1101,14 @@ export async function runVerify(
         continue;
       }
       deletions += 1;
-      if (await targetProviders.results.hasResponse(stored, responseId)) kept += 1;
+      // An id the result table holds again (posted again after the deletion) is not deleted, as
+      // `reconcile` keeps it; a row posted again since `from` is among the new responses above.
+      if (
+        (await targetProviders.results.hasResponse(stored, responseId)) &&
+        (await source.response(postId, copy.responseId)) === null
+      ) {
+        kept += 1;
+      }
     }
     judge("deletions", { surveyId }, kept === 0, false, { source: deletions, kept });
     return { rows: fresh, names, late, deletions: anyCopy };
