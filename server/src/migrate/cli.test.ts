@@ -442,7 +442,7 @@ describe("migrate:hosted run", () => {
       env: {
         LEGACY_SQL_CONNECTION_STRING: "Server=sql.invalid;Database=x;Password=secret-one",
         LEGACY_SURVEYS_STORAGE_CONNECTION_STRING: sas,
-        LEGACY_RESULTS_STORAGE_CONNECTION_STRING: sas,
+        LEGACY_RESULTS_STORAGE_CONNECTION_STRING: sas.replaceAll("acct", "results"),
       },
     });
     expect(code).toBe(2);

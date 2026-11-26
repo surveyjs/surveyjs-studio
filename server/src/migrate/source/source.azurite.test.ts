@@ -10,6 +10,7 @@ import {
 import { createStubShareReader } from "../../providers/azure-legacy/legacy-shares-stub.js";
 import { LAYOUT_CONTAINERS_BY_KIND } from "../../providers/azure-legacy/mapping.js";
 import { openLegacySource, type LegacySource } from "./index.js";
+import { probeLegacySource, probeResultsAccount } from "./probe.js";
 import { openSqlSource } from "./sql.js";
 
 async function collect<T>(items: AsyncIterable<T>): Promise<T[]> {
@@ -303,6 +304,11 @@ describe("the legacy source readers (local replica)", () => {
       expect(tables.has(table.toLowerCase()), table).toBe(true);
     }
     expect(tables.has(`post${MISSING.replaceAll("-", "")}`)).toBe(false);
+  });
+
+  it("passes both probes of the source: every store answers, and the results account is the app's", async () => {
+    await expect(probeLegacySource(config, { shares: null })).resolves.toBeUndefined();
+    await expect(probeResultsAccount(source)).resolves.toBeUndefined();
   });
 
   it("streams the large survey's responses in pages", async () => {

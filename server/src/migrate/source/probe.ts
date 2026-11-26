@@ -8,6 +8,7 @@ import type { LegacyShare } from "../../providers/azure-legacy/legacy-shares.js"
 import { safeErrorParts } from "../../safe-error.js";
 import { Refused } from "../state.js";
 import { CONTAINERS_EVERY_SOURCE_HOLDS } from "./blobs.js";
+import { sourceFingerprint } from "./fingerprint.js";
 import type { ListingShareReader } from "./shares.js";
 import { EVENTS_TABLE, tableClient } from "./tables.js";
 
@@ -44,14 +45,24 @@ const refusal = (problems: readonly string[]) =>
  * Checks, before anything is written, that every store the tool reads answers: the two file
  * shares (of a remote source; Azurite has no file service, and a share reader given by the caller
  * is taken as it is), the containers and the event table every source holds, and the results
- * account's table list. Throws a `Refused` naming each one that does not. Without this a share the
- * credentials cannot read would read as "no file" and a missing container as "empty": the copy
- * would take nothing, `verify` would agree, and `reconcile` would remove what the copy took.
+ * account's table list; and, of a remote source, that the two storage settings name two accounts.
+ * Throws a `Refused` naming each one that does not. Without this a share the credentials cannot
+ * read would read as "no file" and a missing container as "empty": the copy would take nothing,
+ * `verify` would agree, and `reconcile` would remove what the copy took.
  */
 export async function probeLegacySource(
   legacy: LegacyConfig,
   options: { shares?: ListingShareReader | null } = {},
 ): Promise<void> {
+  // The old service keeps the responses in an account of their own; the local replica has one.
+  const { surveysAccount, resultsAccount } = sourceFingerprint(legacy);
+  const remote = [
+    legacy.surveysStorageConnectionString,
+    legacy.resultsStorageConnectionString,
+  ].some((connectionString) => !isLocalStorageString(connectionString));
+  if (remote && surveysAccount !== "" && surveysAccount === resultsAccount) {
+    throw refusal([`${SURVEYS} and ${RESULTS} name the same storage account`]);
+  }
   if (options.shares === undefined) {
     const shares: [LegacyShare, string, string][] = [
       ["surveyfiles", SURVEYS, legacy.surveysStorageConnectionString],
@@ -110,4 +121,27 @@ export async function probeLegacySource(
   );
   const found = problems.filter((problem): problem is string => problem !== null);
   if (found.length > 0) throw refusal(found);
+}
+
+/**
+ * Checks, once the source is open, that the results account is the old app's: a survey that has
+ * had a response has a `post…` table there. A wrong account that exists answers every survey's
+ * table with "not found", which reads as "no responses": the copy would take none and `verify`
+ * would agree. Throws a `Refused` when the account lists no such table while the SQL source
+ * holds a survey (only its first page of surveys is read).
+ */
+export async function probeResultsAccount(source: {
+  resultTables(): Promise<Set<string>>;
+  surveys(): AsyncIterable<unknown>;
+}): Promise<void> {
+  const tables = await source.resultTables();
+  if ([...tables].some((name) => /^post/i.test(name))) return;
+  const surveys = source.surveys()[Symbol.asyncIterator]();
+  const first = await surveys.next();
+  await surveys.return?.();
+  if (first.done !== true) {
+    throw refusal([
+      `the results account (${RESULTS}) holds no response table while the SQL source holds surveys`,
+    ]);
+  }
 }

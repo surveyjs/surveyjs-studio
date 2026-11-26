@@ -113,7 +113,7 @@ const { openSqlSource } = await import("./sql.js");
 const { openShareSource } = await import("./shares.js");
 const { openTableSource } = await import("./tables.js");
 const { openBlobSource } = await import("./blobs.js");
-const { probeLegacySource } = await import("./probe.js");
+const { probeLegacySource, probeResultsAccount } = await import("./probe.js");
 const { Refused } = await import("../state.js");
 const { LegacyStoreError } = await import("../../providers/azure-legacy/errors.js");
 const { eventRec } = await import("../copy.js");
@@ -345,10 +345,11 @@ describe("a store that answers 404", () => {
 
 describe("opening a source: every store the tool reads is checked first", () => {
   const remote = "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=a2V5";
+  /** The two accounts of a source: the results one is `acct` renamed `results` (remote). */
   const both = (value: string) => ({
     sqlConnectionString: "Server=sql.invalid",
     surveysStorageConnectionString: value,
-    resultsStorageConnectionString: value,
+    resultsStorageConnectionString: value.replaceAll("acct", "results"),
   });
   /** The refusal's message; "" when the probe passes. */
   const refusal = async (probe: Promise<void>): Promise<string> => {
@@ -402,6 +403,38 @@ describe("opening a source: every store the tool reads is checked first", () => 
     expect(await refusal(probeLegacySource(both("UseDevelopmentStorage=true")))).toMatch(
       /table list.*403/,
     );
+  });
+
+  it("refuses a remote source whose two storage settings name the same account", async () => {
+    const same = {
+      sqlConnectionString: "Server=sql.invalid",
+      surveysStorageConnectionString: remote,
+      resultsStorageConnectionString: remote,
+    };
+    const message = await refusal(probeLegacySource(same));
+    expect(message).toMatch(
+      /LEGACY_SURVEYS_STORAGE_CONNECTION_STRING and LEGACY_RESULTS_STORAGE_CONNECTION_STRING name the same storage account/,
+    );
+    expect(message).not.toContain("a2V5");
+    // The local replica keeps both in its one account.
+    expect(await refusal(probeLegacySource(both("UseDevelopmentStorage=true")))).toBe("");
+  });
+
+  it("refuses a results account without a response table while the SQL source holds surveys", async () => {
+    const sourceOf = (tableNames: string[], surveys: number) => ({
+      resultTables: () => Promise.resolve(new Set(tableNames)),
+      surveys: async function* () {
+        for (let n = 0; n < surveys; n += 1) yield { id: String(n) };
+      },
+    });
+    // Another account that exists: its tables are not the old app's.
+    expect(await refusal(probeResultsAccount(sourceOf(["orders", "invoices"], 3)))).toMatch(
+      /LEGACY_RESULTS_STORAGE_CONNECTION_STRING.*no response table.*surveys/,
+    );
+    expect(await refusal(probeResultsAccount(sourceOf([], 1)))).not.toBe("");
+    // One response table is enough; a source without surveys has none to hold.
+    expect(await refusal(probeResultsAccount(sourceOf(["orders", "post0001"], 3)))).toBe("");
+    expect(await refusal(probeResultsAccount(sourceOf(["orders"], 0)))).toBe("");
   });
 
   it("warns, not silently, when the share reader cannot use a connection string", async () => {

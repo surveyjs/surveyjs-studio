@@ -37,7 +37,7 @@ import { runReconcile } from "./reconcile.js";
 import { selectSample, type SampleSet } from "./sample.js";
 import { describeSource, sourceFingerprint, type SourceFingerprint } from "./source/fingerprint.js";
 import { openLegacySource, type LegacySource } from "./source/index.js";
-import { probeLegacySource } from "./source/probe.js";
+import { probeLegacySource, probeResultsAccount } from "./source/probe.js";
 import type { ListingShareReader } from "./source/shares.js";
 import type { ChangeTimeDefaults } from "./source/sql.js";
 import { Refused } from "./state.js";
@@ -93,10 +93,12 @@ Options:
   --help                Show this text
 
 Every command but wipe prints the source it opened (server, database and account names) and
-first checks that every store it reads answers; it refuses (exit 2) one that does not. copy
-records the source in the target; verify, delta and reconcile refuse (exit 2) another source,
-and a --sample or --include other than the copy's; delta and reconcile refuse a target whose
-copy has not finished. The report and the progress lines give each phase's duration.
+first checks that every store it reads answers, and that the results account holds response
+tables and, of a remote source, is not the surveys account; it refuses (exit 2) a source that
+fails a check. copy records the source in the target; verify, delta and reconcile refuse
+(exit 2) another source, and a --sample or --include other than the copy's; delta and reconcile
+refuse a target whose copy has not finished. The report and the progress lines give each
+phase's duration.
 
 Exit codes: 0 done or green, 1 failed or differences found, 2 usage error or refused`;
 
@@ -216,7 +218,7 @@ export interface MigrateDeps {
   env?: CliEnv;
   /**
    * Default: `probeLegacySource` (every store answers, or a refusal), then `openLegacySource`
-   * with `shares`.
+   * with `shares`, then `probeResultsAccount` (the results account holds response tables).
    */
   openSource?: (legacy: LegacyConfig) => LegacySource | Promise<LegacySource>;
   /** Default: the database and file store the `--target` file's settings name. */
@@ -385,10 +387,17 @@ export async function run(
         deps.openSource ??
         (async (l: LegacyConfig) => {
           await probeLegacySource(l, { shares: deps.shares });
-          return openLegacySource(l, {
+          const reading = openLegacySource(l, {
             shares: deps.shares,
             warn: (message) => io.err(`warning: ${message}\n`),
           });
+          try {
+            await probeResultsAccount(reading);
+          } catch (error) {
+            await reading.close();
+            throw error;
+          }
+          return reading;
         });
       source = await open(legacy);
       // The marks' one assumption, checked before the target is opened: a refused copy changes
