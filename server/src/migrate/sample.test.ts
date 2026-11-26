@@ -66,7 +66,7 @@ function fakeSource(): LegacySource {
     id: id("6", i + 1),
     organizationid: orgId,
     userid: userId,
-    role: 1,
+    role: "user",
     happendat: null,
   })) as unknown as LegacyOrganizationUserRow[];
   async function* of<T>(items: readonly T[]): AsyncGenerator<T> {
@@ -126,6 +126,51 @@ describe("selectSample", () => {
     const all = await selectSample(fakeSource(), 1, []);
     expect(all.projects).toEqual(lower([P1, P2]));
     expect(all.surveys).toEqual(lower(SURVEYS.slice(0, 6).map((row) => row.id)));
+  });
+
+  it("counts a member as the copy does: only a role the copy keeps, and a project left with none moves its surveys", async () => {
+    const DAVE = user(4);
+    const O1 = project(11); // Bob admin; Alice only with a role that is no role
+    const O2 = project(12); // only Bob, with a role that is no role: the copy skips it (member-less)
+    const S1 = survey(11); // O1's, created by Bob
+    const S2 = survey(12); // O2's, created by Alice: the copy moves it to Alice
+    const S3 = survey(13); // O2's, created by Dave: moves to Dave, not Alice's
+    async function* of<T>(items: readonly T[]): AsyncGenerator<T> {
+      yield* items;
+    }
+    const member = (n: number, org: string, userId: string, role: string) =>
+      ({
+        id: id("6", n),
+        organizationid: org,
+        userid: userId,
+        role,
+        happendat: null,
+      }) as LegacyOrganizationUserRow;
+    const source = {
+      users: () => of([ALICE, BOB, DAVE].map((userId) => ({ id: userId, accesskey: null }))),
+      organizations: () =>
+        of(
+          [O1, O2].map((org) => ({
+            id: org,
+            name: org,
+            happendat: null,
+          })) as LegacyOrganizationRow[],
+        ),
+      organizationUsers: () =>
+        of([
+          member(1, O1, BOB, "admin"),
+          member(2, O1, ALICE, "owner"),
+          member(3, O2, BOB, "owner"),
+        ]),
+      surveys: () =>
+        of([surveyRow(11, O1, BOB), surveyRow(12, O2, ALICE), surveyRow(13, O2, DAVE)]),
+    } as unknown as LegacySource;
+
+    const sample = await selectSample(source, 0, [ALICE]);
+    expect(sample.projects).toEqual(new Set());
+    expect(sample.surveys).toEqual(lower([S2]));
+    expect(sample.surveys.has(S1.toLowerCase())).toBe(false);
+    expect(sample.surveys.has(S3.toLowerCase())).toBe(false);
   });
 
   it("reports an included id that is no account, and an id that is no GUID", async () => {

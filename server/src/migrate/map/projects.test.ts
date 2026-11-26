@@ -69,6 +69,27 @@ describe("mapProject", () => {
     ]);
   });
 
+  it("takes a member's updated_at from the latest change time of its rows, as the mapping says", () => {
+    const changed = (row: LegacyOrganizationUserRow, timestamp: string | null) => ({
+      ...row,
+      timestamp: timestamp === null ? null : new Date(timestamp),
+    });
+    const result = mapProject(
+      org,
+      [
+        changed(member(M1, U1, "user", "2021-01-01T00:00:00.000Z"), "2024-06-01T00:00:00.000Z"),
+        changed(member(M2, U1, "user", "2022-01-01T00:00:00.000Z"), "2023-01-01T00:00:00.000Z"),
+        // A row with no change time keeps its own time.
+        changed(member(M3, U2, "user", "2021-05-05T00:00:00.000Z"), null),
+      ],
+      createReport(),
+    );
+    expect(result?.members.map((m) => [m.userId, m.createdAt, m.updatedAt])).toEqual([
+      [U1.toLowerCase(), "2021-01-01T00:00:00.000Z", "2024-06-01T00:00:00.000Z"],
+      [U2.toLowerCase(), "2021-05-05T00:00:00.000Z", "2021-05-05T00:00:00.000Z"],
+    ]);
+  });
+
   it("skips and reports a project without members", () => {
     const report = createReport();
     expect(mapProject(org, [], report)).toBeNull();

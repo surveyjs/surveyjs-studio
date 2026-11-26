@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { isGuid } from "../providers/azure-legacy/mapping.js";
-import type { Report } from "./map/report.js";
+import type { LegacyOrganizationUserRow } from "../providers/azure-legacy/rows.js";
+import { mapProject } from "./map/projects.js";
+import { createReport, type Report } from "./map/report.js";
 import type { LegacySource } from "./source/index.js";
 
 /** What a sample run copies, by lower-case ids. */
@@ -34,7 +35,8 @@ export function inSampleShare(accountId: string, share: number): boolean {
  *   creator's, as the copy moves it there);
  * - every project it is a member of, with the project's surveys (its members get profiles in
  *   the copy, their own surveys are not pulled in: not transitive).
- * A listed id that is no account is reported and left out.
+ * Members and member-less projects are the copy's own (`mapProject`): a row with a role the copy
+ * does not keep makes nobody a member. A listed id that is no account is reported and left out.
  */
 export async function selectSample(
   source: LegacySource,
@@ -61,22 +63,30 @@ export async function selectSample(
     else report?.note("sample_include_unknown", { accountId: id });
   }
 
-  const organizations = new Set<string>();
-  for await (const row of source.organizations()) organizations.add(row.id.toLowerCase());
-  const withMembers = new Set<string>();
-  const projects = new Set<string>();
+  const membersOf = new Map<string, LegacyOrganizationUserRow[]>();
   for await (const row of source.organizationUsers()) {
     const projectId = row.organizationid.toLowerCase();
-    if (!organizations.has(projectId) || !isGuid(row.userid)) continue;
-    withMembers.add(projectId);
-    if (accounts.has(row.userid.toLowerCase())) projects.add(projectId);
+    const rows = membersOf.get(projectId);
+    if (rows) rows.push(row);
+    else membersOf.set(projectId, [row]);
+  }
+  /** The projects the copy keeps (with a member it keeps); the rest move their surveys. */
+  const kept = new Set<string>();
+  const projects = new Set<string>();
+  for await (const row of source.organizations()) {
+    const projectId = row.id.toLowerCase();
+    // The copy reports what it skips; the selection only needs the outcome.
+    const mapped = mapProject(row, membersOf.get(projectId) ?? [], createReport());
+    if (mapped === null) continue;
+    kept.add(projectId);
+    if (mapped.members.some(({ userId }) => accounts.has(userId))) projects.add(projectId);
   }
 
   const surveys = new Set<string>();
   for await (const row of source.surveys()) {
     const owner = row.userid?.toLowerCase() ?? "";
     const creator = row.creatorid?.toLowerCase() ?? "";
-    const orphan = !users.has(owner) && !withMembers.has(owner);
+    const orphan = !users.has(owner) && !kept.has(owner);
     if (accounts.has(owner) || projects.has(owner) || (orphan && accounts.has(creator))) {
       surveys.add(row.id.toLowerCase());
     }

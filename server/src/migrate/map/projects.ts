@@ -13,15 +13,19 @@ import type { Report } from "./report.js";
 
 const EPOCH = new Date(0);
 
+/** A member row with its change time (`[timestamp]`, UTC), when the reader has it. */
+type MemberRow = LegacyOrganizationUserRow & { timestamp?: Date | null };
+
 /**
  * A project and its members. A project without usable members is skipped and reported. Members:
  * one per (project, user), an admin row winning (as the provider merges them), created at the
- * earliest and updated at the latest of the user's rows (legacy local times read as UTC); a user
- * with only unknown roles is no member, and is reported.
+ * earliest of the user's rows' times (legacy local times read as UTC) and updated at the latest
+ * of their change times (a row without one counts with its own time); a user with only unknown
+ * roles is no member, and is reported. The sample selects members by this function too.
  */
 export function mapProject(
   org: LegacyOrganizationRow,
-  members: readonly LegacyOrganizationUserRow[],
+  members: readonly MemberRow[],
   report: Report,
 ): { project: ProjectRec; members: MemberRec[] } | null {
   const projectId = org.id.toLowerCase();
@@ -43,7 +47,7 @@ export function mapProject(
     return null;
   }
 
-  const byUser = new Map<string, LegacyOrganizationUserRow[]>();
+  const byUser = new Map<string, MemberRow[]>();
   for (const row of usable) {
     const userId = row.userid.toLowerCase();
     byUser.set(userId, [...(byUser.get(userId) ?? []), row]);
@@ -61,12 +65,13 @@ export function mapProject(
     }
     if (roles.length === 0) continue;
     const times = rows.map((row) => (row.happendat ?? EPOCH).getTime());
+    const changes = rows.map((row) => (row.timestamp ?? row.happendat ?? EPOCH).getTime());
     result.push({
       projectId,
       userId,
       role: roles.includes("admin") ? "admin" : "user",
       createdAt: new Date(Math.min(...times)).toISOString(),
-      updatedAt: new Date(Math.max(...times)).toISOString(),
+      updatedAt: new Date(Math.max(...changes)).toISOString(),
     });
   }
   if (result.length === 0) {
