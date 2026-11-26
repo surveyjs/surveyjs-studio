@@ -365,10 +365,9 @@ what the copy writes. Without a layout, a permissions list still hides its priva
 results then hid nothing: stricter, as before. The report applies to this case (a layout listing columns and a
 permissions list) only, and can over-report: it cannot tell a list Studio wrote from a list the owner set.
 
-Malformed permission lists are read more strictly than the old service read them: an `isPublic` that is not a Boolean
-(the text "true", say), and a name with both a true and a false entry, make the answer private. The old service
-would have accepted such a list; failing closed costs at most an answer that stays hidden until the owner publishes it
-again.
+Malformed permission lists fail closed: an `isPublic` that is not a Boolean (the text "true", say), and a name with
+both a true and a false entry, make the answer private. The old behaviour for such lists was not established; failing
+closed costs at most an answer that stays hidden until the owner publishes it again.
 
 Studio on the old stores applies the same function since 2026-11-26 and now saves the permissions in the old service's
 full form, so a list Studio writes from then on keeps the owner's public questions public ([ADR 0016](0016-results-details-exports-and-public-results.md#changed-2026-11-26-public-results-on-the-old-stores)).
