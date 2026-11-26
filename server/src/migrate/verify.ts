@@ -24,8 +24,9 @@
  *   the last full verify: the changed surveys in full (their responses by the new rows, their
  *   private questions with the checkpoint's answer names), every survey's new responses and
  *   deletions, the responses and markers of a survey whose responses were all deleted since
- *   (the old app's event), the markers of one with a deletion copy since, and the small tables
- *   (surveys, projects, members, people, keys) in full. A `delta` with no `reconcile` after it
+ *   (the old app's event), the markers of one with a deletion copy since, the small tables
+ *   (surveys, projects, members, people, keys) in full, and the key sets `reconcile` compares
+ *   (layouts, permissions records, saved views, Studio's own files), strictly. A `delta` with no `reconcile` after it
  *   is a difference. A full recount of every response is not part of it, nor is the history of
  *   a survey that did not change: the authors it names are read from the target's history.
  *
@@ -35,6 +36,7 @@
  * compared. Both modes flag the stores the copy does not take: rows of the app's own token table
  * and users' editor files of no survey. The report holds ids and counts, never content (rule 6).
  */
+import { surveyIdOfFile } from "../domain/file-id.js";
 import { legacyFileRecord } from "../domain/legacy-file.js";
 import type { FileKind, LayoutKind, SurveyRecord, SurveyResponse } from "../domain/types.js";
 import {
@@ -421,14 +423,21 @@ export async function runVerify(
     ]);
     const want = mappedMemberKeys(members, profiles);
     const have = memberKeys(storedMembers);
-    // A member removed leaves no change time (the project's member count changes with it): only
-    // extra members the target holds are that.
-    const removed = traceless && want.every((member) => have.includes(member));
+    // A member removed leaves no change time: the target holds every member the source has and
+    // more. Only the members, and the project's member count, are then pending; the rest of the
+    // project's record is compared.
+    const removed =
+      traceless && have.length > want.length && want.every((member) => have.includes(member));
+    const expected = read === null ? null : expectedProject(read, members);
     judge(
       "projects",
       ids,
-      read !== null && sameJson(stored, expectedProject(read, members)),
-      changed || removed,
+      expected !== null &&
+        (sameJson(stored, expected) ||
+          (removed &&
+            stored !== null &&
+            sameJson({ ...stored, memberCount: expected.memberCount }, expected))),
+      changed,
     );
     judge("members", ids, sameJson(have, want), changed || removed, {
       source: members.length,
@@ -673,6 +682,12 @@ export async function runVerify(
   }
   phase("surveys", `surveys: ${seen.size} compared`);
 
+  // ---- Incremental: the key sets `reconcile` compares (deletions there leave no trace) ----
+  if (since !== null) {
+    await compareKeySets();
+    phase("keys", "layouts, permissions, views and own files: key sets compared");
+  }
+
   // ---- Whole tables, counted as of the marks (full) ----
   if (options.full) {
     await countTableRows(
@@ -693,7 +708,11 @@ export async function runVerify(
     await countTableRows(
       "views",
       "saved_views",
-      { excused: await ofDeletedSurveys("saved_views"), extraPending: traceless },
+      {
+        excused: await ofDeletedSurveys("saved_views"),
+        extraPending: traceless,
+        idsOf: viewIds,
+      },
       mapAsync(source.views(), (view) => {
         if (!copied.has(view.surveyId.toLowerCase())) return null;
         const blobName = `${view.surveyId}/${view.userId}/${view.view}`;
@@ -708,7 +727,11 @@ export async function runVerify(
     await countTableRows(
       "own_files",
       "files",
-      { excused: await ofDeletedSurveys("files"), extraPending: traceless },
+      {
+        excused: await ofDeletedSurveys("files"),
+        extraPending: traceless,
+        idsOf: (fileId) => ({ fileId }),
+      },
       mapAsync(source.appFiles(), (blob) => {
         const record = fileRecordFromBlob(blob.blobName, blob.properties, blob.metadata);
         if (record === null || record.surveyId === null || !copied.has(record.surveyId)) {
@@ -730,6 +753,56 @@ export async function runVerify(
     );
   }
   return { ok };
+
+  /**
+   * The window's check of what the old app deletes without a trace: every layout, permissions
+   * record (the copy keeps one per survey whose private questions came from a permissions blob),
+   * saved view and Studio's own file the target holds of a copied survey is in the source's
+   * listing, strictly (the old service is frozen; one the source lacks is a deletion `reconcile`
+   * missed). The same small listings `reconcile` reads.
+   */
+  async function compareKeySets() {
+    const layoutsInSource = new Set<string>();
+    for (const kind of LAYOUT_KINDS) {
+      for await (const name of source.layoutNames(kind)) {
+        layoutsInSource.add(`${name.toLowerCase()}/${kind}`);
+      }
+    }
+    for (const key of await target.keysOf("survey_layouts")) {
+      const [surveyId = "", kind = ""] = key.split("/");
+      if (copied.has(surveyId))
+        judge("layouts", { surveyId, kind }, layoutsInSource.has(key), false);
+    }
+    const permissionsInSource = new Set<string>();
+    for await (const name of source.changedBlobs("permissions", new Date(0))) {
+      permissionsInSource.add(name.toLowerCase());
+    }
+    for (const key of await state.keys(PERMISSIONS)) {
+      const surveyId = key.slice(PERMISSIONS.length);
+      if (copied.has(surveyId)) {
+        judge("permissions", { surveyId }, permissionsInSource.has(surveyId), false);
+      }
+    }
+    const viewsInSource = new Set<string>();
+    for await (const name of source.changedBlobs("views", new Date(0))) {
+      viewsInSource.add(name.toLowerCase());
+    }
+    for (const key of await target.keysOf("saved_views")) {
+      const ids = viewIds(key);
+      if (copied.has(ids.surveyId!)) judge("views", ids, viewsInSource.has(key), false);
+    }
+    const filesInSource = new Set<string>();
+    for await (const blob of source.appFiles()) {
+      const record = fileRecordFromBlob(blob.blobName, blob.properties, blob.metadata);
+      if (record !== null) filesInSource.add(record.id);
+    }
+    for (const fileId of await target.keysOf("files")) {
+      const surveyId = surveyIdOfFile(fileId);
+      if (surveyId !== null && copied.has(surveyId)) {
+        judge("own_files", { fileId }, filesInSource.has(fileId), false);
+      }
+    }
+  }
 
   // ---- Counts ----
 
@@ -757,7 +830,7 @@ export async function runVerify(
       else if (keys === null) before += 1;
       else keys.add(row.key);
     }
-    const sourceLate = late.size;
+    const sourceLate = [...late];
     if (keys !== null) {
       for (const key of late) keys.delete(key);
       before = keys.size;
@@ -774,7 +847,9 @@ export async function runVerify(
     ]);
     return {
       counts: { source: before, target: total - lateHeld.length },
-      pending: sourceLate > 0 || lateHeld.length > 0,
+      // The rows left out as pending: the source's late ones, and those the target holds of the
+      // excused and extra keys.
+      pendingKeys: [...new Set([...sourceLate, ...lateHeld])],
     };
   }
 
@@ -785,20 +860,22 @@ export async function runVerify(
     rows: AsyncIterable<{ key: string; late: boolean } | null>,
     options: CountOptions = {},
   ) {
-    const { counts, pending: late } = await countRowsOf(rows, table, surveyId, options);
+    const { counts, pendingKeys } = await countRowsOf(rows, table, surveyId, options);
     // Rows changed after the marks are left out on both sides; listed, never with their keys.
-    if (late) pending(check, { surveyId });
+    if (pendingKeys.length > 0) pending(check, { surveyId });
     judge(check, { surveyId }, counts.source === counts.target, options.changed ?? false, counts);
   }
 
+  /** `idsOf`: each pending row listed by its ids (a key that names no content); else one entry. */
   async function countTableRows(
     check: string,
     table: CountedTable,
-    options: CountOptions,
+    options: CountOptions & { idsOf?: (key: string) => Record<string, string> },
     rows: AsyncIterable<{ key: string; late: boolean } | null>,
   ) {
-    const { counts, pending: late } = await countRowsOf(rows, table, undefined, options);
-    if (late) pending(check, {});
+    const { counts, pendingKeys } = await countRowsOf(rows, table, undefined, options);
+    if (options.idsOf) for (const key of pendingKeys) pending(check, options.idsOf(key));
+    else if (pendingKeys.length > 0) pending(check, {});
     judge(check, {}, counts.source === counts.target, false, counts);
   }
 
@@ -1206,6 +1283,12 @@ export async function runVerify(
     judge("responses", ids, total === 0, deletedAllLate.has(surveyId), { ...counts, compared });
     await compareLinks();
   }
+}
+
+/** A saved view's ids from its key (`{surveyId}/{userId}/{view}`). */
+function viewIds(key: string): Record<string, string> {
+  const [surveyId = "", userId = "", view = ""] = key.split("/");
+  return { surveyId, userId, view };
 }
 
 /** A row as folding places it, with the checksum of the whole row. */

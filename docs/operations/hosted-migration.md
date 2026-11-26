@@ -160,6 +160,7 @@ What each phase reads, and why some cost the same whatever changed:
 | `verify`    | `stores`             | The token table and the file container (listings); the results account's table list; the event log since the last verify    |
 |             | `people`, `projects` | The user, project and member rows; the target's rows of each                                                                |
 |             | `surveys`            | Each survey's record; its responses and deletion copies since the last full verify; the changed surveys in full; counts     |
+|             | `keys`               | Incremental: the layout, permission, view and file containers listed (small, as `reconcile`), against the target's keys     |
 | `copy`      | `surveys`            | Every survey in full, 8 at once; `events`, `views` and `files` after it                                                     |
 
 The event log and each survey's response, marker and deletion-copy tables are read by change time, and the old store
@@ -235,8 +236,11 @@ is corrected and a `delta` or `copy --full` runs again.
   response and marker counts), a deletion copy (the response, and its client's completion marker, which goes with it).
   The full `verify` also counts as pending what the old app deletes without a trace (a layout or permissions blob, a
   member, a project, a saved view or file, a person no longer named) when the last `reconcile` ran after the marks; that
-  is why the day-before run follows a `reconcile`. Without one, those are differences. The incremental `verify` never
-  takes that rule: in the window the old service is frozen, so such an item is a deletion `reconcile` missed.
+  is why the day-before run follows a `reconcile`. Without one, those are differences. Of a project that lost a member,
+  only its members and member count are pending. The incremental `verify` never takes that rule: in the window the old
+  service is frozen, so such an item is a deletion `reconcile` missed. It compares the members, projects and people in
+  full, and every layout, permissions record, saved view and own file the target holds against the source's listings;
+  one the source lacks is a difference.
 - **`reconcile`:** the incremental `verify` reports this difference when a `delta` ran after the last `reconcile`: the
   deletions since are not applied. Run `reconcile`, then `verify` again.
 - **`full_verify`:** the incremental `verify` builds on the last full one that ended with no difference (pending items

@@ -311,10 +311,14 @@ would have blocked the window. Fixed, and recorded here (point 6 reads with thes
   project, a saved view or Studio's own file, and what follows from them (a survey moved off a project gone, a person
   no longer named). Such an item the source lacks is pending when the last `reconcile` ran after the marks: that
   `reconcile` compared the full key sets and kept the item, so it was deleted since. Without such a `reconcile` it
-  stays a difference (one is due).
+  stays a difference (one is due). Of a project that lost a member, only the members and the member count are
+  pending; the rest of its record is compared.
 - **The window stays strict.** Its verify is incremental and runs after the final `delta` and `reconcile`, with the
   old service frozen before the marks: no dated trace can come after them, the trace-less rule above does not apply
-  to the incremental verify, and `--no-pending` fails any pending item. A deletion `reconcile` missed is red there.
+  to the incremental verify, and `--no-pending` fails any pending item. A deletion `reconcile` missed is red there:
+  the incremental verify compares the members, projects and people in full, and the key sets `reconcile` compares
+  (every layout, permissions record, saved view and Studio's own file the target holds of a copied survey must be in
+  the source's listings: the same small listings `reconcile` reads, so about the cost of its first phases).
   An incremental verify after a `delta` with no `reconcile` after it is a difference (`reconcile`): deletions since
   the last `reconcile` are not applied.
 - **The incremental verify sees a delete-all.** It read deletions only by their copies, and a delete-all writes none:

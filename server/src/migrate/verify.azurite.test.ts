@@ -1232,7 +1232,10 @@ describe("verify as the go/no-go: deletions, pending and the window", () => {
         const { ok, json } = await verify({ deepSample: 0, wrap: traceless });
         expect(json.differences).toEqual([]);
         expect(ok).toBe(true);
-        expect(json.pending).toContainEqual({ check: "views", ids: {} });
+        expect(json.pending).toContainEqual({
+          check: "views",
+          ids: { surveyId: FEEDBACK, userId: VIEW_USER, view: "summary" },
+        });
         expect(json.pending).toContainEqual({
           check: "layouts",
           ids: { surveyId: FEEDBACK, kind: "table" },
@@ -1255,6 +1258,38 @@ describe("verify as the go/no-go: deletions, pending and the window", () => {
       });
     });
 
+    it("full: a project record that differs otherwise stays a difference, its member count only pending", async () => {
+      const db = copied.database.db;
+      const { name } = await db
+        .selectFrom("projects")
+        .select("name")
+        .where("id", "=", MARKETING)
+        .executeTakeFirstOrThrow();
+      await keepingState(async () => {
+        try {
+          await reconciledAfter(copyMarks.takenAt);
+          // A member removed in the source: only the member count differs, pending.
+          const removed = await verify({ deepSample: 0, wrap: traceless });
+          expect(findings(removed.json.differences, "projects")).toEqual([]);
+          // A wrong name, with or without a member removed: red.
+          await db
+            .updateTable("projects")
+            .set({ name: "renamed" })
+            .where("id", "=", MARKETING)
+            .execute();
+          for (const wrap of [traceless, (source: LegacySource) => source]) {
+            const { ok, json } = await verify({ deepSample: 0, wrap });
+            expect(ok).toBe(false);
+            expect(findings(json.differences, "projects")).toEqual([
+              expect.objectContaining({ ids: { projectId: MARKETING } }),
+            ]);
+          }
+        } finally {
+          await db.updateTable("projects").set({ name }).where("id", "=", MARKETING).execute();
+        }
+      });
+    });
+
     it("incremental (the window, after the final reconcile): a member the source lacks is a difference", async () => {
       await keepingState(async () => {
         await setBaseline(copyMarks);
@@ -1264,6 +1299,110 @@ describe("verify as the go/no-go: deletions, pending and the window", () => {
         expect(findings(json.differences, "members")).toEqual([
           expect.objectContaining({ ids: { projectId: MARKETING } }),
         ]);
+      });
+    });
+  });
+
+  describe("the window's verify after a reconcile that missed a deletion", () => {
+    /** A source that lost FEEDBACK's table layout and permissions, a saved view and an own file. */
+    const missed = (source: LegacySource): LegacySource => ({
+      ...source,
+      async layoutText(surveyId, kind) {
+        if (surveyId.toLowerCase() === FEEDBACK && kind === "table") return null;
+        return source.layoutText(surveyId, kind);
+      },
+      async *layoutNames(kind) {
+        for await (const name of source.layoutNames(kind)) {
+          if (!(kind === "table" && name.toLowerCase() === FEEDBACK)) yield name;
+        }
+      },
+      async permissionsText(surveyId) {
+        if (surveyId.toLowerCase() === FEEDBACK) return null;
+        return source.permissionsText(surveyId);
+      },
+      async *changedBlobs(container, since) {
+        for await (const name of source.changedBlobs(container, since)) {
+          const lower = name.toLowerCase();
+          if (container === "permissions" && lower === FEEDBACK) continue;
+          if (container === "views" && lower.startsWith(`${FEEDBACK}/${VIEW_USER}/`)) continue;
+          yield name;
+        }
+      },
+      async *views(surveyId) {
+        for await (const view of source.views(surveyId)) {
+          if (view.userId.toLowerCase() !== VIEW_USER) yield view;
+        }
+      },
+      async *appFiles() {
+        for await (const blob of source.appFiles()) {
+          if (!blob.blobName.toLowerCase().endsWith(OWN_FILE)) yield blob;
+        }
+      },
+    });
+
+    it("is red for a layout, a permissions blob, a saved view and an own file the source lacks", async () => {
+      await keepingState(async () => {
+        await setBaseline(copyMarks);
+        await reconciledAfter(copyMarks.takenAt);
+        const clean = await verify({ full: false });
+        expect(clean.json.differences).toEqual([]);
+        const { ok, json } = await verify({ full: false, wrap: missed });
+        expect(ok).toBe(false);
+        for (const [check, ids] of [
+          ["layouts", { surveyId: FEEDBACK, kind: "table" }],
+          ["permissions", { surveyId: FEEDBACK }],
+          ["views", { surveyId: FEEDBACK, userId: VIEW_USER, view: "summary" }],
+          ["own_files", { fileId: OWN_FILE }],
+        ] as const) {
+          expect(json.differences, check).toContainEqual(expect.objectContaining({ check, ids }));
+        }
+      });
+    });
+
+    it("is red for a project and a seeded person the source lacks", async () => {
+      const ENGINEERING = "55555555-0000-4000-8000-a00000000002";
+      const seeded = "11111111-0000-4000-8000-a0000000e005";
+      const withoutProject = (source: LegacySource): LegacySource => ({
+        ...source,
+        async *organizations(since) {
+          for await (const row of source.organizations(since)) {
+            if (row.id.toLowerCase() !== ENGINEERING) yield row;
+          }
+        },
+        async *organizationUsers(since) {
+          for await (const row of source.organizationUsers(since)) {
+            if (row.organizationid.toLowerCase() !== ENGINEERING) yield row;
+          }
+        },
+      });
+      await keepingState(async () => {
+        try {
+          await setBaseline(copyMarks);
+          await reconciledAfter(copyMarks.takenAt);
+          await copied.target.upsertPeople([
+            {
+              id: seeded,
+              email: `${seeded}@example.com`,
+              displayName: seeded,
+              siteBlocked: false,
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+          const { ok, json } = await verify({ full: false, wrap: withoutProject });
+          expect(ok).toBe(false);
+          expect(json.differences).toContainEqual({
+            check: "projects",
+            ids: { projectId: ENGINEERING },
+            counts: { inSource: 0 },
+          });
+          expect(json.differences).toContainEqual({
+            check: "people",
+            ids: { userId: seeded },
+            counts: { inSource: 0 },
+          });
+        } finally {
+          await copied.target.deletePeople([seeded]);
+        }
       });
     });
   });
