@@ -127,7 +127,7 @@ What each phase reads, and why some cost the same whatever changed:
 
 | Command     | Phase                | What it reads                                                                                                               |
 | ----------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `delta`     | `changes`            | The SQL rows changed since the marks; the layout and permission containers listed (small)                                   |
+| `delta`     | `changes`            | The SQL rows changed since the marks; the layout, permission and published-snapshot containers listed (small)               |
 |             | `people`             | Every user, project and member row (small tables); the history of the changed surveys only                                  |
 |             | `surveys`            | Each survey's responses, markers and deletion copies changed since the marks, 16 surveys at once                            |
 |             | `events`             | The event log changed since the marks                                                                                       |

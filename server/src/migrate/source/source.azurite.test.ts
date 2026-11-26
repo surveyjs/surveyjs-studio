@@ -29,6 +29,7 @@ describe("the legacy source readers (local replica)", () => {
   const blobs = BlobServiceClient.fromConnectionString(config.surveysStorageConnectionString);
   const VIEWS = "my-surveys-views";
   const FILES = "my-surveys-files";
+  const PUBLISHED = "surveypublishedjson";
   const viewSurvey = "22222222-0000-4000-8000-a000000000f1";
   const viewUser = "11111111-0000-4000-8000-a000000000f1";
   const written: [string, string][] = [];
@@ -135,6 +136,43 @@ describe("the legacy source readers (local replica)", () => {
     expect(listed.map((e) => e.id)).toEqual(all.map((p) => p.entry.id));
     expect(await source.historyEntries(MISSING)).toEqual([]);
     expect(await source.historyNewest(MISSING, 20)).toEqual([]);
+  });
+
+  it("reads a published snapshot as a history entry at its blob's time, by nobody, only among the newest", async () => {
+    const points = fixtures.blobs.filter((b) => b.container === "surveyjsonhistory");
+    const surveyId = points[0]!.name.split("/")[0]!;
+    const count = points.filter((b) => b.name.split("/")[0] === surveyId).length;
+    const publishId = "dddddddd-0000-4000-8000-a0000000f0a1";
+    await put(PUBLISHED, publishId, '{"title":"Published"}');
+    const { lastModified } = await blobs
+      .getContainerClient(PUBLISHED)
+      .getBlobClient(publishId)
+      .getProperties();
+    const published = {
+      entry: { id: publishId, at: lastModified!.toISOString(), userId: null },
+      text: '{"title":"Published"}',
+    };
+    // The fixture points are older than the blob just written: it is the newest entry. The id is
+    // found in any letter case.
+    const all = await source.historyNewest(surveyId, 20, publishId.toUpperCase());
+    expect(all.length).toBe(count + 1);
+    expect(all[0]).toEqual(published);
+    expect(await source.historyNewest(surveyId, 1, publishId)).toEqual([published]);
+    expect(await source.publishedSnapshot(publishId.toUpperCase())).toEqual(published);
+    // Only through its own time: a newer point leaves it out of the newest one.
+    const point = "99999999-0000-4000-8000-a0000000f0a1";
+    await put("surveyjsonhistory", `${surveyId}/${point}`, '{"pages":[]}', {
+      savedat: "2999-01-01T00:00:00.000Z",
+    });
+    expect((await source.historyNewest(surveyId, 1, publishId)).map((p) => p.entry.id)).toEqual([
+      point,
+    ]);
+    // None, or a publish id that is not a GUID: no entry.
+    expect(await source.publishedSnapshot(MISSING)).toBeNull();
+    expect(await source.publishedSnapshot("not-a-guid")).toBeNull();
+    expect((await source.historyNewest(surveyId, 20, null)).length).toBe(count + 1);
+    expect(await collect(source.changedBlobs("published", EPOCH))).toContain(publishId);
+    expect(await collect(source.changedBlobs("published", FUTURE))).toEqual([]);
   });
 
   it("reads layouts and permissions as stored, null for none", async () => {

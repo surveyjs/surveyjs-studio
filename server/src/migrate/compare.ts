@@ -58,16 +58,21 @@ export const expectedRecord = (read: SurveyRecord, mapped: SurveyRecord): Survey
 
 /**
  * The history the target should hold, from the source's entries (newest first) and their
- * snapshots (null: none or unreadable): the mapper keeps the 20 newest and skips a snapshot that
- * is not a JSON object.
+ * snapshots (null: none or unreadable), or their texts as stored (the published snapshot, which
+ * the app does not read): the mapper keeps the 20 newest and skips a snapshot that is not a JSON
+ * object.
  */
 export const expectedHistory = (
   surveyId: string,
-  entries: readonly { entry: HistoryEntryRecord; snapshot: unknown }[],
+  entries: readonly (
+    { entry: HistoryEntryRecord; snapshot: unknown } | { entry: HistoryEntryRecord; text: string }
+  )[],
 ): HistoryRec[] =>
   mapHistory(
     surveyId,
-    entries.map(({ entry, snapshot }) => ({ entry, text: JSON.stringify(snapshot) ?? "null" })),
+    entries.map((item) =>
+      "text" in item ? item : { entry: item.entry, text: JSON.stringify(item.snapshot) ?? "null" },
+    ),
     createReport(),
   );
 

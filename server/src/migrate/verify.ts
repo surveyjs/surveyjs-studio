@@ -202,8 +202,12 @@ export async function runVerify(
   report.checked("not_copied_user_files", userFiles);
   if (userFiles > 0) differ("not_copied_user_files", {}, { files: userFiles });
 
-  // What changed in the layouts and permissions after the marks, and since the last full verify.
-  const blobsChangedAfter = async (container: "layouts" | "permissions", from: Date) => {
+  // What changed in the layouts and permissions after the marks, and since the last full verify
+  // (the published snapshots too, named by publish id).
+  const blobsChangedAfter = async (
+    container: "layouts" | "permissions" | "published",
+    from: Date,
+  ) => {
     const names = new Set<string>();
     for await (const name of source.changedBlobs(container, from)) names.add(name.toLowerCase());
     return names;
@@ -217,10 +221,20 @@ export async function runVerify(
           ...(await blobsChangedAfter("layouts", markOf(since, "blobs"))),
           ...(await blobsChangedAfter("permissions", markOf(since, "blobs"))),
         ]);
-  /** Incremental: whether the survey's row, layouts or permissions changed since the full verify. */
-  const changedSinceFull = (surveyId: string, timestamp: Date | null) =>
+  const publishedSince =
+    since === null ? null : await blobsChangedAfter("published", markOf(since, "blobs"));
+  /**
+   * Incremental: whether the survey's row, layouts, permissions or published snapshot changed
+   * since the full verify.
+   */
+  const changedSinceFull = (
+    surveyId: string,
+    row: { timestamp: Date | null; publishid: string | null },
+  ) =>
     since !== null &&
-    (changedAfterMarks(since, "surveys", timestamp) || changedSince!.has(surveyId));
+    (changedAfterMarks(since, "surveys", row.timestamp) ||
+      changedSince!.has(surveyId) ||
+      (row.publishid !== null && publishedSince!.has(row.publishid.toLowerCase())));
   /** The results account's tables, listed once: a survey without them has nothing to query. */
   const resultTables = await source.resultTables();
   phase("stores", "stores the copy does not take, and the changed blobs: read");
@@ -234,8 +248,7 @@ export async function runVerify(
     ...(sample && { sample }),
     report: quiet(),
     runStart,
-    readsHistory:
-      since === null ? () => true : (surveyId, row) => changedSinceFull(surveyId, row.timestamp),
+    readsHistory: since === null ? () => true : (surveyId, row) => changedSinceFull(surveyId, row),
   });
   const mapped =
     since === null
@@ -419,7 +432,7 @@ export async function runVerify(
         : await compareNewResponses(surveyId, base.record.postId, stored, markOf(since, "tables"));
     // A survey changed since the last full verify is compared in full: its documents when they
     // changed, its settings and private questions also when new responses came in.
-    const documentsChanged = changedSinceFull(surveyId, row.timestamp);
+    const documentsChanged = changedSinceFull(surveyId, row);
     const documents = options.full || deep.has(surveyId) || documentsChanged;
     const settings = documents || (fresh !== null && fresh.rows > 0);
     const texts: Texts = settings
@@ -685,7 +698,7 @@ export async function runVerify(
 
     const history = mapHistory(
       surveyId,
-      await source.historyNewest(surveyId, HISTORY_KEEP),
+      await source.historyNewest(surveyId, HISTORY_KEEP, rec.record.legacyPublishId),
       quiet(),
     );
     if (options.full) {
@@ -889,10 +902,15 @@ export async function runVerify(
     }
 
     const page = await sourceProviders.surveys.listHistory({ surveyId, limit: HISTORY_KEEP });
-    const entries = [];
+    const entries: Parameters<typeof expectedHistory>[1][number][] = [];
     for (const entry of page.items) {
       const snapshot = await sourceProviders.surveys.getHistorySnapshot(surveyId, entry.id);
       entries.push({ entry, snapshot });
+    }
+    // The app does not read the published snapshot: the source's own read, as the copy takes it.
+    const published = await source.publishedSnapshot(rec.record.legacyPublishId);
+    if (published && !entries.some(({ entry }) => entry.id === published.entry.id)) {
+      entries.push(published);
     }
     const history = expectedHistory(surveyId, entries);
     for (const entry of history) links.push(...fileLinks(entry.snapshot));

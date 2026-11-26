@@ -278,6 +278,25 @@ describe("delta and reconcile from the high-water marks", () => {
     }
   }, 120_000);
 
+  it("takes a published snapshot changed after the marks into the survey's history, its row unchanged", async () => {
+    const publishId = fixtures.surveys.find((s) => s.id === OLD_POLL)!.publishid!.toLowerCase();
+    await putBlob("surveypublishedjson", publishId, '{"title":"Published"}');
+    written.push(["surveypublishedjson", publishId]);
+    const { lastModified } = await blobs
+      .getContainerClient("surveypublishedjson")
+      .getBlobClient(publishId)
+      .getProperties();
+    await run((source) =>
+      runDelta(source, copied.target, { report: createReport(), marginMs: 0, concurrency: 4 }),
+    );
+    expect((await migrated.surveys.listHistory({ surveyId: OLD_POLL, limit: 21 })).items).toEqual([
+      { id: publishId, at: lastModified!.toISOString(), userId: null },
+    ]);
+    expect(await migrated.surveys.getHistorySnapshot(OLD_POLL, publishId)).toEqual({
+      title: "Published",
+    });
+  }, 120_000);
+
   it("copies what changed and removes what is gone; verify is green, the replica untouched", async () => {
     // ---- The old app's changes, after the marks ----
     const now = new Date();

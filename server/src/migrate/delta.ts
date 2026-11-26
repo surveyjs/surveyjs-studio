@@ -3,8 +3,9 @@
  * listing the large stores. How each part's changes are found:
  * - SQL tables (people, surveys, projects, members): by their change time (a row with none is
  *   read every time, and noted);
- * - layouts, permissions, users' views and Studio's own files: their containers are small, so
- *   they are listed and filtered by last-modified time;
+ * - layouts, permissions, published snapshots, users' views and Studio's own files: their
+ *   containers are small, so they are listed and filtered by last-modified time (a published
+ *   snapshot is named by its survey's publish id);
  * - the history of a changed survey: listed under that survey's prefix only, never the whole
  *   container;
  * - responses, completion markers and deletion copies of every migrated survey: each survey's
@@ -137,7 +138,20 @@ export async function runDelta(
       changedSurveys.add(name.toLowerCase());
     }
   }
-  phase("changes", `changed: ${changedSurveys.size} surveys, ${changedProjects.size} projects`);
+  /** Publish ids whose published snapshot changed: their surveys' documents are copied again. */
+  const changedPublished = new Set<string>();
+  for await (const name of source.changedBlobs("published", blobsSince)) {
+    changedPublished.add(name.toLowerCase());
+  }
+  /** Whether the survey's row, layouts, permissions or published snapshot changed. */
+  const changed = (row: { id: string; publishid: string | null }) =>
+    changedSurveys.has(row.id.toLowerCase()) ||
+    (row.publishid !== null && changedPublished.has(row.publishid.toLowerCase()));
+  phase(
+    "changes",
+    `changed: ${changedSurveys.size} surveys, ${changedPublished.size} published snapshots, ` +
+      `${changedProjects.size} projects`,
+  );
 
   // ---- People and projects: the changed ones, and those the target does not hold yet ----
   // Only the history of a changed survey, or of one the target lacks, can name new authors.
@@ -146,7 +160,8 @@ export async function runDelta(
     ...(sample && { sample }),
     report,
     runStart: run?.startedAt ?? marks.takenAt,
-    readsHistory: (surveyId) => changedSurveys.has(surveyId) || !targetSurveys.has(surveyId),
+    readsHistory: (surveyId, row) =>
+      changed({ id: surveyId, publishid: row.publishid }) || !targetSurveys.has(surveyId),
   });
   const targetUsers = new Set(await target.idsOf("users"));
   const people = named.people.filter((p) => changedUsers.has(p.id) || !targetUsers.has(p.id));
@@ -210,7 +225,7 @@ export async function runDelta(
     // A survey of a project whose members changed may move to its creator: mapped again.
     const owner = row.userid?.toLowerCase() ?? "";
     let documents: WrittenDocuments | null = null;
-    if (changedSurveys.has(surveyId) || changedProjects.has(owner) || checkpoint === null) {
+    if (changed(row) || changedProjects.has(owner) || checkpoint === null) {
       // The checkpoint stays: it keeps the survey's answer names, and a stopped delta repeats.
       documents = await copier.documents(row, { keepCheckpoint: true });
       // A row that maps to no survey any more: `reconcile` removes it.

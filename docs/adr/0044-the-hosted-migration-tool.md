@@ -224,6 +224,9 @@ recorded above:
 - **Point 7, the sample:** it took any member row as membership, whatever its role, while the copy keeps only admin
   and user rows; both now use the copy's rule. The copy keeps copying the keys of named people outside the sample, now
   written down.
+- **Point 8, history:** the published snapshot was never read, so it was never copied and `verify` agreed. It is now
+  an entry at its own time (its last change), by nobody, kept only when that time puts it among the 20 newest; `delta`
+  takes one changed after the marks, and both `verify` history checks expect it.
 - **Point 8, rows:** responses took their id from a field of the row rather than its key, and a row without a time got
   the change time instead of being skipped; deletion copies and events did the same. Events kept the respondent
   address of older rows and upper-case ids in their payload. Completion markers with a flag of another type were not

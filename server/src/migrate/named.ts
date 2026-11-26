@@ -50,7 +50,10 @@ export async function collectNamed(
     /** `created_at` of the profiles and keys: the run's start. */
     runStart: string;
     /** Whether to name the authors of the survey's history (a listing of its history prefix). */
-    readsHistory: (surveyId: string, row: { timestamp: Date | null }) => boolean;
+    readsHistory: (
+      surveyId: string,
+      row: { timestamp: Date | null; publishid: string | null },
+    ) => boolean;
   },
 ): Promise<Named> {
   const { sample, report } = options;
@@ -106,7 +109,8 @@ export async function collectNamed(
     if (legacyUsers.has(owner)) named.add(owner);
     if (row.creatorid !== null) named.add(row.creatorid.toLowerCase());
     if (options.readsHistory(surveyId, row) && isGuid(row.id)) {
-      const entries = await source.historyEntries(surveyId);
+      // The published snapshot counts among the 20 (it names nobody, but may leave a point out).
+      const entries = await source.historyEntries(surveyId, row.publishid);
       for (const entry of entries.slice(0, HISTORY_KEEP)) {
         if (entry.userId !== null) named.add(entry.userId.toLowerCase());
       }

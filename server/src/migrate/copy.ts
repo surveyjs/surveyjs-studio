@@ -303,7 +303,7 @@ export function createSurveyCopier(
 
     const history = mapHistory(
       surveyId,
-      await source.historyNewest(surveyId, HISTORY_KEEP),
+      await source.historyNewest(surveyId, HISTORY_KEEP, rec.record.legacyPublishId),
       report,
     );
     await target.upsertHistory(history);

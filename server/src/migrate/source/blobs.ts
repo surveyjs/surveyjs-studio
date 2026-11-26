@@ -3,6 +3,7 @@ import type { HistoryEntryRecord, LayoutKind } from "../../domain/types.js";
 import { LegacyStoreError, statusOf } from "../../providers/azure-legacy/errors.js";
 import {
   historyEntryFromBlob,
+  isGuid,
   LAYOUT_CONTAINERS_BY_KIND,
 } from "../../providers/azure-legacy/mapping.js";
 import { historyOrder } from "../../providers/ordering.js";
@@ -11,12 +12,28 @@ import { dateHeader } from "./tables.js";
 /** The legacy blob containers of the surveys account, read only. */
 export interface BlobSource {
   definitionText(surveyId: string): Promise<string | null>;
-  /** The survey's history entries from the listing alone (no snapshot read), newest first. */
-  historyEntries(surveyId: string): Promise<HistoryEntryRecord[]>;
+  /**
+   * The survey's history entries from the listing alone (no snapshot read), newest first; with
+   * the survey's publish id, its published snapshot among them, as `historyNewest` counts it.
+   */
+  historyEntries(surveyId: string, publishId?: string | null): Promise<HistoryEntryRecord[]>;
+  /**
+   * The survey's `keep` newest history entries with their snapshots, newest first. With the
+   * survey's publish id, its published snapshot counts among them as `publishedSnapshot` reads it.
+   */
   historyNewest(
     surveyId: string,
     keep: number,
+    publishId?: string | null,
   ): Promise<{ entry: HistoryEntryRecord; text: string }[]>;
+  /**
+   * The published snapshot `surveypublishedjson/{publishId}` as a history entry: the publish id,
+   * the blob's last-modified time, no user (mapping 3.4). Null when there is none or the publish
+   * id is not a GUID.
+   */
+  publishedSnapshot(
+    publishId: string | null | undefined,
+  ): Promise<{ entry: HistoryEntryRecord; text: string } | null>;
   layoutText(surveyId: string, kind: LayoutKind): Promise<string | null>;
   permissionsText(surveyId: string): Promise<string | null>;
   views(): AsyncIterable<{
@@ -31,7 +48,10 @@ export interface BlobSource {
   /** The names of a layout kind's blobs (survey ids as stored; a listing of a small container). */
   layoutNames(kind: LayoutKind): AsyncIterable<string>;
   /** The names of the container's blobs changed after `since` (a listing; small containers). */
-  changedBlobs(container: "layouts" | "permissions" | "views", since: Date): AsyncIterable<string>;
+  changedBlobs(
+    container: "layouts" | "permissions" | "views" | "published",
+    since: Date,
+  ): AsyncIterable<string>;
   appFiles(): AsyncIterable<{
     blobName: string;
     properties: BlobProperties;
@@ -43,6 +63,8 @@ export interface BlobSource {
   blobsClock(): Promise<Date | null>;
 }
 
+const HISTORY_CONTAINER = "surveyjsonhistory";
+const PUBLISHED_CONTAINER = "surveypublishedjson";
 const PERMISSIONS_CONTAINER = "surveyresultpermissions";
 const VIEWS_CONTAINER = "my-surveys-views";
 const FILES_CONTAINER = "my-surveys-files";
@@ -73,22 +95,53 @@ export function openBlobSource(connectionString: string): BlobSource {
     return (await bytesOf(operation, from, name))?.toString("utf8") ?? null;
   }
 
-  /** The survey's history entries with their blob names, newest first. */
+  /**
+   * The survey's history entries with their blobs, newest first; with a publish id, its published
+   * snapshot among them (unless a point of the survey has the same id).
+   */
   async function historyOf(
     surveyId: string,
-  ): Promise<{ entry: HistoryEntryRecord; name: string }[]> {
+    publishId?: string | null,
+  ): Promise<{ entry: HistoryEntryRecord; from: string; name: string }[]> {
     const id = surveyId.toLowerCase();
-    const entries: { entry: HistoryEntryRecord; name: string }[] = [];
-    for await (const blob of blobsOf("history list", "surveyjsonhistory", `${id}/`)) {
+    const entries: { entry: HistoryEntryRecord; from: string; name: string }[] = [];
+    for await (const blob of blobsOf("history list", HISTORY_CONTAINER, `${id}/`)) {
       const entry = historyEntryFromBlob(
         id,
         blob.name,
         blob.metadata,
         blob.properties.lastModified,
       );
-      if (entry) entries.push({ entry, name: blob.name });
+      if (entry) entries.push({ entry, from: HISTORY_CONTAINER, name: blob.name });
+    }
+    const published = await publishedEntry(publishId);
+    if (published && !entries.some(({ entry }) => entry.id === published.entry.id)) {
+      entries.push(published);
     }
     return entries.sort((a, b) => historyOrder(a.entry, b.entry));
+  }
+
+  /** The published snapshot's entry and blob (its time only, no text read); null: none. */
+  async function publishedEntry(
+    publishId: string | null | undefined,
+  ): Promise<{ entry: HistoryEntryRecord; from: string; name: string } | null> {
+    if (!publishId || !isGuid(publishId)) return null;
+    // Named by the publish id in lower case, as the old service names its survey blobs.
+    const name = publishId.toLowerCase();
+    try {
+      const { lastModified } = await container(PUBLISHED_CONTAINER)
+        .getBlobClient(name)
+        .getProperties();
+      if (!lastModified) return null;
+      return {
+        entry: { id: name, at: lastModified.toISOString(), userId: null },
+        from: PUBLISHED_CONTAINER,
+        name,
+      };
+    } catch (error) {
+      if (statusOf(error) === 404) return null;
+      throw new LegacyStoreError("published snapshot read", error);
+    }
   }
 
   /** Every blob of a container with the given options; a missing container is empty. */
@@ -114,16 +167,24 @@ export function openBlobSource(connectionString: string): BlobSource {
       return text === "" ? await textOf("definition read", "surveytext", id) : text;
     },
 
-    historyEntries: async (surveyId) => (await historyOf(surveyId)).map(({ entry }) => entry),
+    historyEntries: async (surveyId, publishId) =>
+      (await historyOf(surveyId, publishId)).map(({ entry }) => entry),
 
-    async historyNewest(surveyId, keep) {
-      const entries = await historyOf(surveyId);
+    async historyNewest(surveyId, keep, publishId) {
+      const entries = await historyOf(surveyId, publishId);
       const newest: { entry: HistoryEntryRecord; text: string }[] = [];
-      for (const { entry, name } of entries.slice(0, Math.max(0, keep))) {
-        const text = await textOf("history read", "surveyjsonhistory", name);
+      for (const { entry, from, name } of entries.slice(0, Math.max(0, keep))) {
+        const text = await textOf("history read", from, name);
         if (text !== null) newest.push({ entry, text });
       }
       return newest;
+    },
+
+    async publishedSnapshot(publishId) {
+      const published = await publishedEntry(publishId);
+      if (published === null) return null;
+      const text = await textOf("published snapshot read", PUBLISHED_CONTAINER, published.name);
+      return text === null ? null : { entry: published.entry, text };
     },
 
     layoutText: (surveyId, kind) =>
@@ -168,7 +229,9 @@ export function openBlobSource(connectionString: string): BlobSource {
           ? layoutContainers
           : from === "permissions"
             ? [PERMISSIONS_CONTAINER]
-            : [VIEWS_CONTAINER];
+            : from === "published"
+              ? [PUBLISHED_CONTAINER]
+              : [VIEWS_CONTAINER];
       const seen = new Set<string>();
       for (const name of containers) {
         for await (const blob of blobsOf("changed blob list", name)) {

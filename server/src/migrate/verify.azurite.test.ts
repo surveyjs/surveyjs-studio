@@ -37,6 +37,8 @@ import { runVerify } from "./verify.js";
 
 const config = replicaConfig();
 const FEEDBACK = "22222222-0000-4000-8000-a00000000001";
+const OLD_POLL = "22222222-0000-4000-8000-a00000000003";
+const OLD_POLL_PUBLISH_ID = "dddddddd-0000-4000-8000-a00000000001";
 const CAMPAIGN = "22222222-0000-4000-8000-a00000000004";
 const FEEDBACK_TABLE = "post33333333000040008000a00000000001";
 const CAMPAIGN_TABLE = "post33333333000040008000a00000000004";
@@ -174,6 +176,8 @@ beforeAll(async () => {
     name: "logo.png",
     createdat: "2026-11-01T10:00:00.000Z",
   });
+  // The old poll's published snapshot, which the copy takes into its history (removed afterwards).
+  await putBlob("surveypublishedjson", OLD_POLL_PUBLISH_ID, '{"title":"Published"}');
   legacy = createAzureLegacyProviders(config, {
     legacyShares: createStubShareReader(fixtures.files),
   });
@@ -258,13 +262,13 @@ describe("verify against a copy of the local replica", () => {
     let tables = new Set<string>();
     const counting = (source: LegacySource): LegacySource => ({
       ...source,
-      historyEntries: (surveyId) => {
+      historyEntries: (surveyId, publishId) => {
         history.push(surveyId);
-        return source.historyEntries(surveyId);
+        return source.historyEntries(surveyId, publishId);
       },
-      historyNewest: (surveyId, keep) => {
+      historyNewest: (surveyId, keep, publishId) => {
         history.push(surveyId);
-        return source.historyNewest(surveyId, keep);
+        return source.historyNewest(surveyId, keep, publishId);
       },
       resultTables: async () => {
         tableLists += 1;
@@ -407,6 +411,32 @@ describe("verify against a copy of the local replica", () => {
       expect(findings(json.differences, "history")).toEqual([
         expect.objectContaining({ ids: expect.objectContaining({ surveyId: FEEDBACK }) }),
       ]);
+    } finally {
+      const at = row.at instanceof Date ? row.at.toISOString() : row.at;
+      await db
+        .insertInto("survey_history")
+        .values({ ...row, at, snapshot: row.snapshot as string })
+        .execute();
+    }
+  });
+
+  it("is red, naming the survey and both checks, when the published snapshot's entry is gone", async () => {
+    const db = copied.database.db;
+    const row = await db
+      .selectFrom("survey_history")
+      .selectAll()
+      .where("survey_id", "=", OLD_POLL)
+      .where("id", "=", OLD_POLL_PUBLISH_ID)
+      .executeTakeFirstOrThrow();
+    await db.deleteFrom("survey_history").where("id", "=", row.id).execute();
+    try {
+      const { ok, json } = await verify();
+      expect(ok).toBe(false);
+      for (const check of ["history", "deep_history"]) {
+        expect(findings(json.differences, check), check).toEqual([
+          expect.objectContaining({ ids: { surveyId: OLD_POLL } }),
+        ]);
+      }
     } finally {
       const at = row.at instanceof Date ? row.at.toISOString() : row.at;
       await db

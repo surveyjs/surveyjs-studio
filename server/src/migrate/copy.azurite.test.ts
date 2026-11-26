@@ -221,13 +221,13 @@ describe("copy from the local replica", () => {
     try {
       const counting: LegacySource = {
         ...source,
-        historyEntries: (surveyId) => {
+        historyEntries: (surveyId, publishId) => {
           listed.push(surveyId);
-          return source.historyEntries(surveyId);
+          return source.historyEntries(surveyId, publishId);
         },
-        historyNewest: (surveyId, keep) => {
+        historyNewest: (surveyId, keep, publishId) => {
           read.push(surveyId.toLowerCase());
-          return source.historyNewest(surveyId, keep);
+          return source.historyNewest(surveyId, keep, publishId);
         },
       };
       const timed = createReport();
@@ -256,6 +256,52 @@ describe("copy from the local replica", () => {
         .input("id", sql.UniqueIdentifier, author)
         .query("DELETE FROM Users WHERE id = @id");
       await pool.close();
+    }
+  });
+
+  it("copies a survey's published snapshot as a history entry at its blob's time, by nobody, only among the 20 newest", async () => {
+    const OLD_POLL = "22222222-0000-4000-8000-a00000000003";
+    const publishId = fixtures.surveys.find((s) => s.id === OLD_POLL)!.publishid!.toLowerCase();
+    const published = blobs.getContainerClient("surveypublishedjson");
+    const history = blobs.getContainerClient("surveyjsonhistory");
+    // Twenty points saved after the snapshot (later times in their metadata).
+    const points = Array.from(
+      { length: 20 },
+      (_, n) => `99999999-0000-4000-8000-a00000000${String(n).padStart(3, "0")}`,
+    );
+    await published.createIfNotExists();
+    await published.getBlockBlobClient(publishId).uploadData(Buffer.from('{"title":"Published"}'));
+    const { lastModified } = await published.getBlobClient(publishId).getProperties();
+    const into = await newTarget();
+    try {
+      await copyInto(into);
+      const surveys = targetProviders(into).surveys;
+      expect((await surveys.listHistory({ surveyId: OLD_POLL, limit: 21 })).items).toEqual([
+        { id: publishId, at: lastModified!.toISOString(), userId: null },
+      ]);
+      expect(await surveys.getHistorySnapshot(OLD_POLL, publishId)).toEqual({
+        title: "Published",
+      });
+
+      for (const point of points) {
+        await history
+          .getBlockBlobClient(`${OLD_POLL}/${point}`)
+          .uploadData(Buffer.from('{"pages":[]}'), {
+            metadata: { savedat: "2999-01-01T00:00:00.000Z" },
+          });
+      }
+      // Copied again: twenty newer points leave it out, and the stored entry goes.
+      await copyInto(into, { full: true });
+      const ids = (await surveys.listHistory({ surveyId: OLD_POLL, limit: 21 })).items.map(
+        (entry) => entry.id,
+      );
+      expect(ids.sort()).toEqual([...points].sort());
+    } finally {
+      await into.close();
+      await published.deleteBlob(publishId).catch(() => undefined);
+      for (const point of points) {
+        await history.deleteBlob(`${OLD_POLL}/${point}`).catch(() => undefined);
+      }
     }
   });
 
