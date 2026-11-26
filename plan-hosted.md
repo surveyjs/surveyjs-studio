@@ -71,8 +71,8 @@ All met. The rule "the later of the two adds the SQL side" now means that this t
 | 5    | The bridge: public actions and legacy files                    | ☑      |
 | 6    | The bridge: access-key actions and the migration guide         | ☑      |
 | 7    | Taking over `api.surveyjs.io` traffic                          | ☑      |
-| 8    | Target provider readiness                                      | ☐      |
-| 9    | The migration tool                                             | ☐      |
+| 8    | Target provider readiness                                      | ☑      |
+| 9    | The migration tool                                             | ☑      |
 | 10   | The cutover kit                                                | ☐      |
 | 11   | The test migration and the cutover runbook                     | ☐      |
 | 12   | Retiring the legacy code in this repository                    | ☐      |
