@@ -1510,17 +1510,18 @@ export interface paths {
          *     `404 survey-not-available`, the same answer as for an unknown survey.
          *
          *     Every completed response, oldest first, paged as `listResults` (a cursor belongs to its
-         *     survey). The cursor carries the last item's submission time and response id: it is opaque
-         *     to clients, and response ids are random. Items carry `submittedAt` and `data` only: no id,
-         *     client id or IP address. The answers and comments of the questions in `settings.privateResultQuestions` are left out;
-         *     `survey.privateQuestions` names them. Each page includes the survey definition so a
-         *     dashboard can render it.
+         *     survey). The cursor is sealed (encrypted and authenticated by the server): it is opaque to
+         *     clients, reveals no submission time and is refused (`400 bad-request`) when changed. Items
+         *     carry `submittedAt` and `data` only: no id, client id or IP address. The answers and
+         *     comments of the questions in `settings.privateResultQuestions` are left out;
+         *     `survey.privateQuestions` names them. When the list names `HappendAt` (the old results'
+         *     name of the submission time), items leave `submittedAt` out too. Each page includes the
+         *     survey definition so a dashboard can render it.
          *
          *     Hosted edition, surveys still on the old service's stores: the old public results' rule
          *     applies. With the survey's old results layout and a saved list, only the answer keys that
          *     both make public are served, so a key only responses hold is left out too; the list can
-         *     then name `HappendAt` and `InstanceId`. When it names `HappendAt`, a dashboard hides the
-         *     submission time (items keep `submittedAt` for paging and `from` and `till`).
+         *     then name `HappendAt` and `InstanceId`.
          *
          *     `from` and `till` narrow the list to a range of `submittedAt`, both bounds exclusive. For a
          *     response saved in parts, `submittedAt` is the time of its first save: a response started
@@ -2230,7 +2231,8 @@ export interface components {
                 privateQuestions?: string[];
             };
             items: {
-                submittedAt: components["schemas"]["Timestamp"];
+                /** @description Absent when `survey.privateQuestions` names `HappendAt`. */
+                submittedAt?: components["schemas"]["Timestamp"];
                 data: {
                     [key: string]: unknown;
                 };

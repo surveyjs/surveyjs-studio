@@ -13,6 +13,7 @@ import {
   codeOf,
   as,
   expectNotRouted,
+  feedbackPrivateQuestions,
   hosted,
   ownSurvey,
   sandbox,
@@ -33,7 +34,7 @@ const NOT_AVAILABLE = { code: "survey-not-available", title: "This survey is not
 type Headers = Record<string, string>;
 
 interface PublicItem {
-  submittedAt: string;
+  submittedAt?: string;
   data: Record<string, unknown>;
 }
 interface PublicPage {
@@ -84,10 +85,13 @@ describe("getPublicResults", () => {
             },
           ],
         },
-        privateQuestions: ["receipt"],
+        privateQuestions: feedbackPrivateQuestions,
       },
+      // The submission time is left out where the private questions name HappendAt.
       items: [4, 5, 3, 1].map((satisfaction) => ({
-        submittedAt: expect.any(String) as string,
+        ...(!feedbackPrivateQuestions.includes("HappendAt") && {
+          submittedAt: expect.any(String) as string,
+        }),
         data: { satisfaction },
       })),
       nextCursor: null,
@@ -151,6 +155,50 @@ describe("getPublicResults", () => {
     const page = (await (await results(id)).json()) as PublicPage;
     expect(page.items.map((item) => item.data)).toEqual([{ q1: "a" }]);
     expect(page.survey.privateQuestions).toEqual(["q2"]);
+  });
+
+  it("leaves the submission time out while the private list names HappendAt", async (ctx) => {
+    const adam = await as(ctx, admin);
+    const id = await ownSurvey(adam, { definition: TEXT_SURVEY });
+    await submitted(id, { data: { q1: "a" } });
+    expect((await patch(adam, id, { settings: { publicResults: true } })).status).toBe(200);
+    const shown = (await (await results(id)).json()) as PublicPage;
+    expect(Object.keys(shown.items[0] ?? {}).sort()).toEqual(["data", "submittedAt"]);
+
+    const patched = await patch(adam, id, { settings: { privateResultQuestions: ["HappendAt"] } });
+    expect(patched.status).toBe(200);
+    const page = (await (await results(id)).json()) as PublicPage;
+    expect(page.survey.privateQuestions).toEqual(["HappendAt"]);
+    expect(page.items).toEqual([{ data: { q1: "a" } }]);
+  });
+
+  it("seals the cursor: it holds no submission time and a changed one is refused", async (ctx) => {
+    if (sandbox) ctx.skip("the sandbox keeps the data in the visitor's own browser");
+    const adam = await as(ctx, admin);
+    const id = await ownSurvey(adam, { definition: TEXT_SURVEY });
+    await submitted(id, { data: { q1: "a" } });
+    await submitted(id, { data: { q1: "b" } });
+    expect(
+      (await patch(adam, id, { settings: { publicResults: true, privateResultQuestions: [] } }))
+        .status,
+    ).toBe(200);
+    const first = (await (await results(id, "?limit=1")).json()) as PublicPage;
+    const cursor = first.nextCursor ?? "";
+    const time = first.items[0]?.submittedAt ?? "";
+    expect(time).not.toBe("");
+    // Not in the text, nor in any base64url reading of it.
+    for (const text of [cursor, ...cursor.split(".")]) {
+      expect(text).not.toContain(time);
+      expect(Buffer.from(text, "base64url").toString("latin1")).not.toContain(time.slice(0, 19));
+    }
+    const next = await results(id, `?limit=1&cursor=${cursor}`);
+    expect(((await next.json()) as PublicPage).items.map((item) => item.data)).toEqual([
+      { q1: "b" },
+    ]);
+    const last = cursor.at(-1) === "A" ? "B" : "A";
+    const changed = await results(id, `?limit=1&cursor=${cursor.slice(0, -1)}${last}`);
+    expect(changed.status).toBe(400);
+    expect(await changed.json()).toMatchObject({ detail: "Invalid cursor." });
   });
 
   it("keeps responses strictly between from and till, paging inside them", async () => {
@@ -274,7 +322,7 @@ describe.runIf(hosted)("getPublicLayout", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { text: string; privateQuestions: string[] };
     expect(Object.keys(body)).toEqual(["text", "privateQuestions"]);
-    expect(body.privateQuestions).toEqual(["receipt"]);
+    expect(body.privateQuestions).toEqual(feedbackPrivateQuestions);
     expect(JSON.parse(body.text)).toMatchObject({ pageSize: 10 });
     const columns = (await (await publicLayout(FEEDBACK, "columns")).json()) as { text: string };
     expect(JSON.parse(columns.text)).toMatchObject({ newcolumnsvisibility: 0 });

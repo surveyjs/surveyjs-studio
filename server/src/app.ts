@@ -322,6 +322,7 @@ export async function buildApp(
         results: providers.results,
         files: providers.files,
         views: providers.views,
+        cursorSecret: config.sessionSecret,
         ...(options.now && { now: options.now }),
       }),
       ...createViewHandlers({

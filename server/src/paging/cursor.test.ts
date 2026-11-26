@@ -13,6 +13,8 @@ import {
   encodeProjectCursor,
   encodeResultsCursor,
   encodeSurveyCursor,
+  sealResultsCursor,
+  unsealResultsCursor,
 } from "./cursor.js";
 
 const MARKETING = "55555555-0000-4000-8000-a00000000001";
@@ -252,6 +254,29 @@ describe("results cursors", () => {
     u: place.submittedAt,
     i: place.id,
   };
+
+  it("seals the public cursor: no time in it, and only its key and survey open it", () => {
+    const secret = "a-secret-of-thirty-two-characters!!";
+    const sealed = sealResultsCursor(place, survey, secret);
+    expect(sealed).not.toContain("2026");
+    for (const part of sealed.split(".")) {
+      expect(Buffer.from(part, "base64url").toString("latin1")).not.toContain("2026-05-01");
+    }
+    expect(sealResultsCursor(place, survey, secret)).not.toBe(sealed);
+    expect(unsealResultsCursor(sealed, survey.toLowerCase(), secret)).toEqual(place);
+    const invalid =
+      (value: string, surveyId = survey, key = secret) =>
+      () =>
+        unsealResultsCursor(value, surveyId, key);
+    expect(invalid(sealed, survey, "another-secret-of-thirty-two-chars!")).toThrow(
+      "Invalid cursor.",
+    );
+    expect(invalid(sealed, "22222222-0000-4000-8000-a00000000009")).toThrow("Invalid cursor.");
+    expect(invalid(encodeResultsCursor(place, survey))).toThrow("Invalid cursor.");
+    const last = sealed.at(-1) === "A" ? "B" : "A";
+    expect(invalid(sealed.slice(0, -1) + last)).toThrow("Invalid cursor.");
+    expect(invalid("x".repeat(1025))).toThrow("Invalid cursor.");
+  });
 
   it("encodes the canonical payload of the lower-case survey id", () => {
     const cursor = encodeResultsCursor(place, survey);

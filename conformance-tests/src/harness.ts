@@ -25,6 +25,21 @@ export const sandbox = inject("sandbox");
  */
 export const hosted = inject("edition") === "hosted";
 
+/**
+ * True when the server runs on the old service's stores (`CONFORMANCE_PROVIDER=azure-legacy`): there
+ * the private questions follow the old public results' rule on the permissions and the old results
+ * column layout (ADR 0016, changed 2026-11-26).
+ */
+export const oldStores = process.env.CONFORMANCE_PROVIDER?.trim() === "azure-legacy";
+
+/**
+ * The fixture survey `…a01`'s private questions: on the old stores it has both old settings, so the
+ * submit time (`HappendAt`) and `InstanceId` join `receipt`.
+ */
+export const feedbackPrivateQuestions: readonly string[] = oldStores
+  ? ["receipt", "HappendAt", "InstanceId"]
+  : ["receipt"];
+
 /** The operations only the hosted edition routes (server/src/app.ts `HOSTED_OPERATIONS`). */
 export const HOSTED_OPERATIONS: readonly string[] = [
   "getPublicDefinition",

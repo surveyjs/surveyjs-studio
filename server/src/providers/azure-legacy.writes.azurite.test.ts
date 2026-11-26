@@ -1688,6 +1688,29 @@ describe("azure-legacy survey writes use the legacy format (local replica)", () 
           lockedQuestions: ["q3"],
         });
       });
+
+      it("keeps a stored private mark that a save in the bridge's shape leaves out (the submit time)", async () => {
+        const { survey, putList, privacy } = await surveyWithQuestions();
+        await store().views.saveLayout(survey.id, "columns", layoutText(0));
+        await putList(
+          '[{"name":"HappendAt","isPublic":false},{"name":"k","isPublic":true},' +
+            '{"name":"q1","isPublic":true},{"name":"q2","isPublic":true}]',
+        );
+        // The old API's setResultPermissions names the questions it marks private only.
+        await store().views.savePrivateQuestions(survey.id, ["q2"]);
+        expect(JSON.parse(await blobText(CONTAINER, survey.id))).toEqual([
+          { name: "q1", isPublic: true },
+          { name: "q2", isPublic: false },
+          { name: "q3", isPublic: true },
+          { name: "HappendAt", isPublic: false },
+          { name: "k", isPublic: true },
+        ]);
+        expect(await privacy()).toEqual({
+          privateQuestions: ["HappendAt", "InstanceId", "q2", "q3", "v2"],
+          publicOnly: ["k", "q1"],
+          lockedQuestions: ["q3"],
+        });
+      });
     });
 
     it("removes the blob with the survey", async () => {

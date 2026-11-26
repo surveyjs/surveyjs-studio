@@ -67,10 +67,11 @@ used with `listMembers`, is `400 bad-request` ("Invalid cursor."). The server ch
   (see the note about short pages above).
 - `limit` is 1 to 1000, default 500. The results page of the web app asks for 1000 at a time and walks to
   the end. There is no cap on the total (the old page stopped at 1,000 responses).
-- **Public results use the same cursor.** `getPublicResults` (`GET /public/surveys/{surveyId}/results`) pages
-  through the survey the same way: the same order, the same `limit` and default, the same cursor (bound to
-  one survey, so a `listResults` cursor of that survey works there too). Its items have no `id`, but the
-  cursor still holds the last row's id. [Public endpoints](public-endpoints.md#public-results) has the rest.
+- **Public results use a sealed cursor.** `getPublicResults` (`GET /public/surveys/{surveyId}/results`) pages
+  through the survey the same way: the same order, the same `limit` and default. Its cursor holds the same
+  place (bound to one survey), sealed by the server (encrypted and authenticated), because an anonymous reader
+  must not see the submission time in it; a `listResults` cursor does not work there, nor the other way round,
+  and a changed one is `400 bad-request`. [Public endpoints](public-endpoints.md#public-results) has the rest.
 - **The export reads the same pages.** `exportResults` walks the survey in pages of 1,000 on the server and
   streams them as one file, so it has the cost described below ([Exporting results](exporting-results.md)).
 

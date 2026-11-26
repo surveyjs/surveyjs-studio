@@ -350,9 +350,14 @@ export function calculateColumns(input: ColumnsInput): ResultColumn[] {
   return columns.map((column) => column.answer());
 }
 
-/** Responses newest first, by the time they were submitted (equal times keep their order). */
-export function newestFirst<T extends { readonly submittedAt: string }>(rows: readonly T[]): T[] {
-  return [...rows].sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt));
+/**
+ * Responses newest first, by the time they were submitted (equal times keep their order); reversed
+ * when a time is missing (public results whose private questions name `HappendAt`, oldest first).
+ */
+export function newestFirst<T extends { readonly submittedAt?: string }>(rows: readonly T[]): T[] {
+  // Public results leave the times out when HappendAt is private; they come oldest first.
+  if (rows.some((row) => row.submittedAt === undefined)) return [...rows].reverse();
+  return [...rows].sort((a, b) => Date.parse(b.submittedAt!) - Date.parse(a.submittedAt!));
 }
 
 /**
@@ -369,7 +374,9 @@ export function localeOf(acceptLanguage: string | undefined): string {
 }
 
 /** A response as the column calculation reads it: Studio's `SurveyResponse`, or a public result. */
-export type ColumnsResponse = Pick<SurveyResponse, "submittedAt" | "data"> & {
+export type ColumnsResponse = Pick<SurveyResponse, "data"> & {
+  /** Absent in public results whose private questions name `HappendAt`. */
+  readonly submittedAt?: string;
   readonly clientId?: string;
 };
 

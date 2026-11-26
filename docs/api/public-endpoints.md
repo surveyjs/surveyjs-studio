@@ -333,7 +333,7 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
     { "submittedAt": "2026-04-02T09:30:00.000Z", "data": { "satisfaction": 5 } },
     { "submittedAt": "2026-04-03T11:00:00.000Z", "data": { "satisfaction": 3 } }
   ],
-  "nextCursor": "eyJ2IjoxLCJrIjoicmVzdWx0cyIs…"
+  "nextCursor": "v1.Hk2s9xQ0bP3mT7aE.Xn4…"
 }
 ```
 
@@ -343,16 +343,17 @@ curl -s "$API/public/surveys/$ID/results?limit=2"
   [above](#who-can-run-a-survey)), so a caller cannot tell them apart. Turning Grant Access off closes the
   endpoint at once, because every call checks the setting.
 - **The page.** Every completed response, oldest first, paged as `listResults`: `limit` 1 to 1000 (default 500)
-  and `cursor`, with the cursor of [`listResults`](paging.md#results-oldest-first-one-survey). A cursor
+  and `cursor`, in the order of [`listResults`](paging.md#results-oldest-first-one-survey). A cursor
   belongs to its survey. Only completed responses are listed: a client's partial saves are left out, and a client's
   complete answers stay separate. Each page repeats the `survey` member, so a client can read it
   from the first page.
 - **`survey`.** `id`, `name` (may be empty), the stored `definition` (so a Dashboard can draw the charts) and
   `privateQuestions`, the names of the questions left out (below). It has no theme and no permissions.
 - **What an item holds.** `submittedAt` and `data` only. **No response id, no client id and no IP address**,
-  whatever the survey's settings are. (The `nextCursor` of a page does carry the submission time and the
-  response id of the page's last item, inside its encoding. Treat it as opaque: response ids are random, and
-  no public operation takes one.)
+  whatever the survey's settings are. When `privateQuestions` names `HappendAt` (the old results' name of the
+  submission time), items leave `submittedAt` out too. (The `nextCursor` of a page is sealed: encrypted and
+  authenticated by the server, so it shows neither the submission time nor the response id it carries, and a
+  changed one answers `400 bad-request`. Treat it as opaque.)
 - **Private questions are stripped on the server.** The survey's list `settings.privateResultQuestions`
   names questions; the server removes their answers from every item's `data` **before** it answers. It also
   removes their comments (the key plus the comment suffix of the definition) and, when the question has a

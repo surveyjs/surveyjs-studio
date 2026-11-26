@@ -231,6 +231,11 @@ describe("newestFirst", () => {
     ];
     expect(newestFirst(rows).map((row) => row.n)).toEqual([2, 3, 1]);
   });
+
+  it("reverses Studio's oldest-first order when the public results leave the times out", () => {
+    const rows: { submittedAt?: string; n: number }[] = [{ n: 1 }, { n: 2 }, { n: 3 }];
+    expect(newestFirst(rows).map((row) => row.n)).toEqual([3, 2, 1]);
+  });
 });
 
 describe("resultColumns", () => {

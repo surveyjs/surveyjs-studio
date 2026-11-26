@@ -316,6 +316,15 @@ describe("getSurveyPublicResults", () => {
     expect(answer.body.toString()).toBe('{"Data":[{"a":1}],"ResultCount":1}');
   });
 
+  it("writes no HappendAt for an item Studio sends without its time (HappendAt private)", async () => {
+    studio.publicResults.set(SURVEY, {
+      items: [JSON.stringify({ data: { a: 1 } })],
+      privateQuestions: ["HappendAt"],
+    });
+    const answer = await send(url(`/${SURVEY}`));
+    expect(answer.body.toString()).toBe('{"Data":[{"a":1,"InstanceId":null}],"ResultCount":1}');
+  });
+
   it("answers a survey without results with an empty list", async () => {
     studio.publicResults.set(SURVEY, { items: [] });
     const answer = await send(url(`/${SURVEY}`));

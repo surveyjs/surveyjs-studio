@@ -868,10 +868,21 @@ describe("privateQuestionsToLegacy", () => {
 
   it("keeps the stored list's other names, public unless now private, then the other private names", () => {
     const stored =
-      '﻿[{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":false},{"name":"q1","isPublic":false},{"isPublic":true},"x"]';
-    expect(privateQuestionsToLegacy(["k", "q2"], ["q1", "q2"], stored)).toBe(
+      '﻿[{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":false},{"name":"q1","isPublic":false},' +
+      '{"name":"c","isPublic":true},{"name":"u"},{"name":"d","isPublic":true},{"name":"d","isPublic":false},' +
+      '{"isPublic":true},"x"]';
+    expect(privateQuestionsToLegacy(["k", "q2", "c"], ["q1", "q2"], stored)).toBe(
       '[{"name":"q1","isPublic":true},{"name":"q2","isPublic":false},' +
-        '{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":true},{"name":"k","isPublic":false}]',
+        '{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":true},{"name":"c","isPublic":false},' +
+        '{"name":"u","isPublic":true},{"name":"d","isPublic":true},{"name":"k","isPublic":false}]',
+    );
+    // With an old results layout the stored marks stay: a stored false stays false though the list
+    // leaves it out (an old-API caller sends its private names only), a stored true stays true
+    // unless now private, and anything else is private.
+    expect(privateQuestionsToLegacy(["k", "q2", "c"], ["q1", "q2"], stored, true)).toBe(
+      '[{"name":"q1","isPublic":true},{"name":"q2","isPublic":false},' +
+        '{"name":"HappendAt","isPublic":true},{"name":"old","isPublic":false},{"name":"c","isPublic":false},' +
+        '{"name":"u","isPublic":false},{"name":"d","isPublic":false},{"name":"k","isPublic":false}]',
     );
     // A stored text that is no list adds nothing.
     expect(privateQuestionsToLegacy(["q1"], ["q1"], "nope")).toBe(

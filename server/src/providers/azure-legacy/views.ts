@@ -107,16 +107,19 @@ export function createAzureViewStore(options: {
 
     getPrivateQuestions: async (surveyId) => (await privacyOf(surveyId)).privateQuestions,
 
-    // The old service's full form: every question of the definition, and the stored list's marks.
+    // The old service's full form: every question of the definition, and the stored list's names.
+    // With an old results layout a stored name the definition does not have keeps its mark, so a
+    // list that leaves out a stored private one (the submit time) never makes it public.
     async savePrivateQuestions(surveyId, names) {
       if (!isGuid(surveyId)) return writePrivateQuestions(blobs, surveyId, "[]"); // rejects
       const survey = surveyId.toLowerCase();
-      const [definition, stored] = await Promise.all([
+      const [definition, stored, layout] = await Promise.all([
         definitionOf(survey),
         textOf(blobs, PERMISSIONS_CONTAINER, survey, PERMISSIONS_READ),
+        layoutOf(survey, "columns"),
       ]);
       const questions = questionsOf(definition ?? {}).map(({ name }) => name);
-      const text = privateQuestionsToLegacy(names, questions, stored ?? null);
+      const text = privateQuestionsToLegacy(names, questions, stored ?? null, layout !== null);
       return writePrivateQuestions(blobs, survey, text);
     },
   };

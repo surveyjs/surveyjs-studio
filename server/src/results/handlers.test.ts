@@ -431,8 +431,8 @@ describe("exportResults, deleteResults and getPublicResults", () => {
       survey: { privateQuestions: string[] };
       items: { data: Record<string, unknown> }[];
     }>();
-    expect(body.items.map((item) => item.data)).toEqual([{ q1: "a", "q1-Comment": "c" }]);
-    // A dashboard hides the submit time by this name; the bridge drops `HappendAt` by it too.
+    // The submit time is private too (`HappendAt`), so the items leave `submittedAt` out.
+    expect(body.items).toEqual([{ data: { q1: "a", "q1-Comment": "c" } }]);
     expect(body.survey.privateQuestions).toEqual(privacy.privateQuestions);
   });
 

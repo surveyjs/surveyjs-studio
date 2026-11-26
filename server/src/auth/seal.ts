@@ -8,8 +8,9 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:cr
  * The key is HKDF-SHA256(ikm = secret as UTF-8, salt = empty, info = purpose, 32 bytes). The purpose
  * is also the GCM additional authenticated data, so a value sealed for one cookie never opens as
  * another. Any failure (bad format, version, key, purpose or tampering) reads as "no value".
+ * `public-results-cursor-v1` seals the public results' paging cursor (`sealResultsCursor`).
  */
-export type SealPurpose = "msid-session-v1" | "msid-auth-v1";
+export type SealPurpose = "msid-session-v1" | "msid-auth-v1" | "public-results-cursor-v1";
 
 const VERSION = "v1";
 const IV_BYTES = 12;

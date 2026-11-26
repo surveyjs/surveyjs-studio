@@ -443,23 +443,39 @@ export function resultsPrivacyFromLegacy(
 /**
  * The permissions blob text for a list of private names, in the old service's full form (what its
  * Summary saved): each of `questionNames` (the definition's) with `isPublic` true or false, then
- * the other names of the `stored` text (one BOM stripped; ignored when no JSON array), public
- * unless now private, so a mark the old site saved stays, then the other private names. With
- * both old settings only a name marked public is public, so a list of private entries only would
- * make every answer private.
+ * the other names of the `stored` text (one BOM stripped; ignored when no JSON array), then the
+ * other private names. A stored name the definition does not have is public unless now private;
+ * with `keepStoredMarks` (the survey has an old results layout, where a name the list does not
+ * mark public is private) it keeps its stored mark instead: public only when stored exactly
+ * `isPublic: true` (and never `false`) and not now private, so a list that leaves a stored private
+ * name out (an old-API caller sends its private names only) never makes it public. With both old
+ * settings only a name marked public is public, so a list of private entries only would make
+ * every answer private.
  */
 export function privateQuestionsToLegacy(
   names: readonly string[],
   questionNames: readonly string[] = [],
   stored: string | null = null,
+  keepStoredMarks = false,
 ): string {
   const hidden = new Set(names);
+  const questions = new Set(questionNames);
   const storedNames: string[] = [];
+  const storedPublic = new Set<string>();
+  const storedPrivate = new Set<string>();
   for (const element of (stored === null ? null : permissionsListFromLegacy(stored)) ?? []) {
     if (typeof element !== "object" || element === null || Array.isArray(element)) continue;
-    const { name } = element as Record<string, unknown>;
-    if (typeof name === "string" && name !== "") storedNames.push(name);
+    const { name, isPublic } = element as Record<string, unknown>;
+    if (typeof name !== "string" || name === "") continue;
+    storedNames.push(name);
+    if (isPublic === true) storedPublic.add(name);
+    else storedPrivate.add(name);
   }
+  const isPublic = (name: string) =>
+    !hidden.has(name) &&
+    (questions.has(name) ||
+      !keepStoredMarks ||
+      (storedPublic.has(name) && !storedPrivate.has(name)));
   const written = new Set([...questionNames, ...storedNames, ...names]);
-  return JSON.stringify([...written].map((name) => ({ name, isPublic: !hidden.has(name) })));
+  return JSON.stringify([...written].map((name) => ({ name, isPublic: isPublic(name) })));
 }

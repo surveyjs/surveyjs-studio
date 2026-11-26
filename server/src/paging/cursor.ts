@@ -1,3 +1,4 @@
+import { seal, unseal } from "../auth/seal.js";
 import { GUID } from "../domain/guid.js";
 import { AppError } from "../errors.js";
 import type { HistoryPosition, ResponsePosition, SurveyPosition } from "../providers/types.js";
@@ -13,7 +14,8 @@ import type { HistoryPosition, ResponsePosition, SurveyPosition } from "../provi
  *   for a pending member. A cursor belongs to one project.
  * - History: `{"v":1,"k":"history","u":<at>,"i":<entry id>}`.
  * - Results: `{"v":1,"k":"results","s":<survey id, lower-case>,"u":<submittedAt>,"i":<response id>}`.
- *   A cursor belongs to one survey.
+ *   A cursor belongs to one survey. The public results seal it (`sealResultsCursor`), so it shows
+ *   no submission time to an anonymous reader.
  *
  * Only the canonical encoding is accepted: a value is valid when encoding what it decodes to gives
  * the value back (so no padding, no extra members or spaces, upper-case ids or loose timestamps).
@@ -266,4 +268,31 @@ export function decodeResultsCursor(value: string, surveyId: string): ResponsePo
   if (!isTimestamp(u) || !isGuid(i)) throw invalidCursor();
   const position = { submittedAt: u, id: i.toLowerCase() };
   return canonical(value, position, encodeResultsCursor(position, surveyId));
+}
+
+/**
+ * A results cursor sealed with `secret` (AES-256-GCM, `auth/seal.ts`): the public results' cursor,
+ * which must not show the submission time it holds. Each call gives a new value.
+ */
+export function sealResultsCursor(
+  position: ResponsePosition,
+  surveyId: string,
+  secret: string,
+): string {
+  return seal("public-results-cursor-v1", secret, encodeResultsCursor(position, surveyId));
+}
+
+/**
+ * The position of a cursor `sealResultsCursor` made for `surveyId`. Throws `400 bad-request`
+ * ("Invalid cursor.") for anything else: a changed value, another key or another survey.
+ */
+export function unsealResultsCursor(
+  value: string,
+  surveyId: string,
+  secret: string,
+): ResponsePosition {
+  if (value.length > MAX_CURSOR_LENGTH) throw invalidCursor();
+  const opened = unseal("public-results-cursor-v1", secret, value);
+  if (opened === null) throw invalidCursor();
+  return decodeResultsCursor(opened, surveyId);
 }

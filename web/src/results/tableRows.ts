@@ -1,6 +1,7 @@
 /** What the table and the charts read of a response (a `SurveyResponse` is one; so is a public item). */
 export interface ResultItem {
-  readonly submittedAt: string;
+  /** Absent on a public item when the private list names `HappendAt` (the submission time). */
+  readonly submittedAt?: string;
   readonly data: Record<string, unknown>;
   readonly respondentIp?: string;
   /** An open run of a client (ADR 0038); the public pages get none. */
