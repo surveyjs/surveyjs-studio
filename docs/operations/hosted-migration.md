@@ -201,6 +201,7 @@ is corrected and a `delta` or `copy --full` runs again.
 | `survey_moved_to_creator`, `survey_moved_from_memberless_project` | The survey's project is gone or has no members; it is now the creator's personal survey                                           |
 | `survey_kept_in_missing_project`                                  | No creator can take the survey: it is copied naming the missing project, visible to nobody                                        |
 | `public_results_off_unreadable_setting`                           | The hidden-questions setting or the column layout could not be read; public results are off for that survey                       |
+| `public_results_no_public_answer`                                 | Public results are on, yet the hidden-questions setting and the column layout together leave no answer public; tell the owner     |
 | `nul_replaced`                                                    | A `\u0000` in a JSON string became U+FFFD                                                                                         |
 | `definition_unreadable`, `theme_unreadable`, `view_unreadable`    | Stored text that is not a JSON object; the survey reads as an empty one, as today                                                 |
 | `future_change_time`                                              | A SQL table holds a change time later than the database's own clock; the mark was capped at the clock. Ask the SurveyJS team why  |

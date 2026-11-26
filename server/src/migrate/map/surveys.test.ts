@@ -88,11 +88,60 @@ describe("mapSurvey, privacy", () => {
     expect(privates(null, hidden)).toEqual(["d"]);
   });
 
-  it("takes the union of both, each once", () => {
-    const text = layout(
-      shown.map((c) => (c.name === "p" || c.name === "c" ? { ...c, visibility: 1 } : c)),
+  it("with both, keeps public only the names the permissions mark public and the layout lists", () => {
+    // c is listed hidden, yet public by the permissions; q is public there but not listed.
+    const marked = JSON.stringify([
+      { name: "p", isPublic: false },
+      { name: "c", isPublic: true },
+      { name: "d", isPublic: true },
+      { name: "q", isPublic: true },
+    ]);
+    const text = layout(shown.map((c) => (c.name === "c" ? { ...c, visibility: 1 } : c)));
+    expect(privates(marked, text)).toEqual(
+      ["HappendAt", "InstanceId", "ev", "ev-Comment", "p", "q"].sort(),
     );
-    expect(privates(perms, text)).toEqual(["c", "p"]);
+  });
+
+  it("with both, hides an answer added after the permissions were saved, HappendAt and a response-only name", () => {
+    // The old public results: q2 came after the permissions list; k is only in responses.
+    const def = JSON.stringify({
+      pages: [{ elements: ["q1", "q2"].map((name) => ({ type: "text", name })) }],
+    });
+    const marked = JSON.stringify([{ name: "q1", isPublic: true }]);
+    const text = layout([{ name: "HappendAt" }, { name: "q1" }, { name: "q2" }], {
+      newcolumnsvisibility: 0,
+    });
+    const report = createReport();
+    const rec = mapSurvey(row(), def, marked, text, { ...ctx(report), extraAnswerNames: ["k"] });
+    expect(rec?.record.settings.publicResults).toBe(true);
+    expect(rec?.privateQuestions.slice().sort()).toEqual(["HappendAt", "InstanceId", "k", "q2"]);
+    expect(report.counts()).toEqual({});
+  });
+
+  it("with both, a list of private entries only (as Studio wrote it) leaves no public answer, reported", () => {
+    const report = createReport();
+    const rec = mapSurvey(
+      row(),
+      definition,
+      JSON.stringify([{ name: "p", isPublic: false }]),
+      layout(shown),
+      ctx(report),
+    );
+    expect(rec?.record.settings.publicResults).toBe(true);
+    expect(rec?.privateQuestions.slice().sort()).toEqual(
+      ["HappendAt", "InstanceId", "c", "d", "ev", "ev-Comment", "p"].sort(),
+    );
+    expect(report.counts()).toEqual({ public_results_no_public_answer: 1 });
+    expect(report.toJSON()).toMatchObject({ notes: [{ ids: { surveyId: low(SURVEY) } }] });
+    // Public results off: nothing to tell.
+    const off = createReport();
+    mapSurvey(row({ allowaccessresult: 0 }), definition, "[]", layout(shown), ctx(off));
+    expect(off.counts()).toEqual({});
+    // Only the submit time public: still no public answer.
+    const timeOnly = createReport();
+    const onlyTime = JSON.stringify([{ name: "HappendAt", isPublic: true }]);
+    mapSurvey(row(), definition, onlyTime, layout(shown), ctx(timeOnly));
+    expect(timeOnly.counts()).toEqual({ public_results_no_public_answer: 1 });
   });
 
   it("has none when neither marks any, or the layout lists no columns", () => {

@@ -21,7 +21,7 @@ What holds on Studio's side, and is public:
   cutover users come from sign-in ([ADR 0022](../adr/0022-users-from-sign-in.md), [ADR 0043](../adr/0043-hosted-users-on-the-local-directory.md)).
 - **Only linked files move,** with the old file names kept in `legacy_files`; files nobody links stay behind.
 - **Saved layouts** (including the column layout) go to `survey_layouts` and users' own views to `saved_views`;
-  hidden public-results questions are the union of both old rules ([ADR 0044](../adr/0044-the-hosted-migration-tool.md)).
+  hidden public-results questions follow the old public results' rule on both old settings ([ADR 0044](../adr/0044-the-hosted-migration-tool.md) point 4).
 - **History** is the 20 newest entries of each survey; a survey's publish id goes to `surveys.legacy_publish_id`.
 - **Not copied:** Studio's own key revocations, API tokens and uploads of no survey (production has none).
 - **The target is Studio's schema** ([data-model.md](data-model.md) and the migrations in `server/sql/postgres/`),

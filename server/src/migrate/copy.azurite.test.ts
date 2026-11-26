@@ -117,10 +117,10 @@ describeProviderSuite("migrated from the local replica", migratedProviders, {
   // Cases that differ only by a documented migration decision (global constraints, Decisions);
   // each decision is asserted directly below ("copy decisions").
   except: {
-    // Decision "private_questions": the union of the permissions' names and the column layout's
-    // hidden ones; the feedback survey's layout lists columns, so HappendAt and InstanceId join.
+    // Decision "private_questions": the old public results' rule on the permissions and the
+    // column layout; the feedback survey has both, so HappendAt and InstanceId join.
     "views > private questions > reads the fixture list and an empty one elsewhere":
-      "private_questions is the union with the column layout's hidden names",
+      "private_questions follows the old rule on both the permissions and the column layout",
     // Decision "files": only files a copied definition, theme, history snapshot or response
     // links; no fixture record links the editor asset.
     "files > getFileByLegacyName > returns the seeded editor asset as stored, octet-stream without an extension":
@@ -331,11 +331,11 @@ describe("copy from the local replica", () => {
         .deleteBlob(name)
         .catch(() => undefined);
 
-    it("private_questions: the permissions' hidden names with the column layout's, HappendAt and InstanceId too", async () => {
+    it("private_questions: with permissions and a layout, all but what both make public, HappendAt and InstanceId too", async () => {
       const providers = providersOf(copied);
       const names = await providers.views.getPrivateQuestions(FEEDBACK);
-      // "receipt": not public in the permissions (and hidden by the layout); the layout lists
-      // columns and neither HappendAt nor InstanceId.
+      // "satisfaction" alone is public in the permissions and listed in the layout; "receipt" is
+      // not public there, and neither are HappendAt nor InstanceId.
       expect([...names].sort()).toEqual(["HappendAt", "InstanceId", "receipt"]);
       expect(await providers.views.getPrivateQuestions(CAMPAIGN)).toEqual([]);
     });
@@ -413,6 +413,84 @@ describe("copy from the local replica", () => {
           );
         } finally {
           await into.close();
+        }
+      });
+    });
+
+    it("private_questions: with permissions and a layout, only the names both make public stay public; a response-only name is private before its batch", async () => {
+      await withResponseOnlyName(async () => {
+        // The campaign survey: satisfaction and the response-only name public in its permissions,
+        // the layout listing satisfaction and receipt shown. Only satisfaction is both.
+        await put(
+          "surveyresultpermissions",
+          CAMPAIGN,
+          JSON.stringify([
+            { name: "satisfaction", isPublic: true },
+            { name: "only_in_responses", isPublic: true },
+          ]),
+        );
+        await put(
+          "surveyresultcolumns",
+          CAMPAIGN,
+          JSON.stringify({
+            columns: [
+              { name: "satisfaction", visibility: 0 },
+              { name: "receipt", visibility: 0 },
+            ],
+            newcolumnsvisibility: 0,
+          }),
+        );
+        // The feedback survey's permissions as Studio writes them (private entries only), under
+        // its layout: no answer stays public. Put back as the fixture afterwards.
+        const permissions = blobs.getContainerClient("surveyresultpermissions");
+        const fixture = fixtures.blobs.find(
+          (b) => b.container === "surveyresultpermissions" && b.name.toLowerCase() === FEEDBACK,
+        )!.content;
+        await permissions
+          .getBlockBlobClient(FEEDBACK)
+          .uploadData(Buffer.from('[{"name":"receipt","isPublic":false}]'));
+        const into = await newTarget();
+        try {
+          const seen: string[][] = [];
+          const watching: MigrationTarget = {
+            ...into.target,
+            upsertResponses: async (recs) => {
+              if (recs.some((rec) => "only_in_responses" in rec.response.data)) {
+                seen.push([...(await providersOf(into).views.getPrivateQuestions(CAMPAIGN))]);
+              }
+              await into.target.upsertResponses(recs);
+            },
+          };
+          const run = createReport();
+          const source = openSource();
+          try {
+            await runCopy(source, watching, { now, report: run, batchSize: 1 });
+          } finally {
+            await source.close();
+          }
+          expect(seen).toHaveLength(1);
+          expect(seen[0]).toContain("only_in_responses");
+          expect([...(await into.target.privateQuestionsOf(CAMPAIGN))].sort()).toEqual([
+            "HappendAt",
+            "InstanceId",
+            "only_in_responses",
+            "receipt",
+          ]);
+          expect([...(await into.target.privateQuestionsOf(FEEDBACK))].sort()).toEqual([
+            "HappendAt",
+            "InstanceId",
+            "receipt",
+            "satisfaction",
+          ]);
+          // Public results on and nothing left public: named for the operator (ids only).
+          const { notes } = run.toJSON() as { notes: { kind: string; ids: object }[] };
+          expect(notes.filter((n) => n.kind === "public_results_no_public_answer")).toEqual([
+            { kind: "public_results_no_public_answer", ids: { surveyId: FEEDBACK } },
+          ]);
+        } finally {
+          await into.close();
+          await remove("surveyresultpermissions", CAMPAIGN);
+          await permissions.getBlockBlobClient(FEEDBACK).uploadData(fixture);
         }
       });
     });

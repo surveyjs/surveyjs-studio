@@ -2,14 +2,14 @@ import type { SurveyRecord } from "../../domain/types.js";
 import {
   definitionFromLegacy,
   isGuid,
-  privateQuestionsFromLegacy,
+  privateAnswersFromLegacy,
   surveyFromLegacy,
   themeFromLegacy,
   UnmappableLegacyRowError,
 } from "../../providers/azure-legacy/mapping.js";
 import type { LegacySurveyRow } from "../../providers/azure-legacy/rows.js";
 import type { SurveyRec } from "../records.js";
-import { answerNamesOf, layoutPrivateNames } from "./layout.js";
+import { answerNamesOf } from "./layout.js";
 import type { Report } from "./report.js";
 import { withoutBom, withoutNul } from "./text.js";
 
@@ -19,8 +19,11 @@ import { withoutBom, withoutNul } from "./text.js";
  * and the people who get a profile. The decisions (design, Decisions):
  * - a survey of a missing or member-less project goes to its creator's personal surveys (archived
  *   flag kept) when the creator has a profile; otherwise it stays as it is, naming the project;
- * - `private_questions` is the union of the permissions' non-public names and the layout's hidden
- *   or non-public answer columns; either setting unreadable turns public results off.
+ * - `private_questions` follows the old public results' rule (`privateAnswers`): the permissions'
+ *   private entries without a layout listing columns; the layout's hidden or non-public answer
+ *   columns without permissions; with both, everything but the names the permissions mark public
+ *   and the layout lists. Either setting unreadable turns public results off. Public results on
+ *   with both settings and no public answer is reported (`public_results_no_public_answer`).
  */
 export function mapSurvey(
   row: LegacySurveyRow & { theme: string | null },
@@ -85,24 +88,23 @@ export function mapSurvey(
       report.note("definition_unreadable", ids);
     }
   }
-  // Public results: the union of both hiding rules; an unreadable one turns them off.
-  const privateQuestions = new Set<string>();
+  // Public results: the old rule on both settings; an unreadable one turns them off.
   let publicResults = record.settings.publicResults;
-  if (permissionsText !== null) {
-    const names = privateQuestionsFromLegacy(permissionsText);
-    if (names === null) {
-      publicResults = false;
-      report.note("public_results_off_unreadable_setting", { ...ids, setting: "permissions" });
-    } else for (const name of names) privateQuestions.add(name);
-  }
-  const layoutNames = layoutPrivateNames(columnsText, [
-    ...answerNamesOf(definition),
-    ...(ctx.extraAnswerNames ?? []),
-  ]);
-  if (layoutNames === null) {
+  const answerNames = [...answerNamesOf(definition), ...(ctx.extraAnswerNames ?? [])];
+  const privacy = privateAnswersFromLegacy(permissionsText, columnsText, answerNames);
+  for (const setting of privacy.unreadable) {
     publicResults = false;
-    report.note("public_results_off_unreadable_setting", { ...ids, setting: "columns" });
-  } else for (const name of layoutNames) privateQuestions.add(name);
+    report.note("public_results_off_unreadable_setting", { ...ids, setting });
+  }
+  // Both settings and no answer left public (the submit time and id are no answers): the owner
+  // sees empty public results, as the old public results answered.
+  if (
+    publicResults &&
+    privacy.listedUnderPermissions !== null &&
+    privacy.publicNames.every((name) => name === "HappendAt" || name === "InstanceId")
+  ) {
+    report.note("public_results_no_public_answer", ids);
+  }
 
   const theme = themeFromLegacy(surveyId, row.theme === null ? null : withoutBom(row.theme), {
     warn: () => report.note("theme_unreadable", ids),
@@ -117,6 +119,6 @@ export function mapSurvey(
     },
     definition: withoutNul(definition, ids, report),
     theme: withoutNul(theme, ids, report),
-    privateQuestions: [...privateQuestions],
+    privateQuestions: privacy.privateNames,
   };
 }

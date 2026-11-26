@@ -7,6 +7,7 @@ import {
   isGuid,
   licenceExpiriesFromLegacy,
   membershipFromLegacy,
+  privateAnswersFromLegacy,
   privateQuestionsFromLegacy,
   privateQuestionsToLegacy,
   projectFromLegacy,
@@ -739,6 +740,44 @@ describe("privateQuestionsFromLegacy", () => {
 
   it.each(["{}", '"x"', "not json", ""])("answers null for %j", (text) => {
     expect(privateQuestionsFromLegacy(text)).toBeNull();
+  });
+});
+
+describe("privateAnswersFromLegacy", () => {
+  const layout = JSON.stringify({
+    columns: [
+      { name: "q1", visibility: 0 },
+      { name: "q2", visibility: 0 },
+    ],
+    newcolumnsvisibility: 0,
+  });
+
+  it("treats no text and empty text as no setting, removes a BOM, and reads both settings", () => {
+    expect(privateAnswersFromLegacy(null, null, ["a"])).toMatchObject({
+      privateNames: [],
+      unreadable: [],
+    });
+    expect(privateAnswersFromLegacy(null, "  ", ["a"]).privateNames).toEqual([]);
+    expect(
+      privateAnswersFromLegacy(null, '﻿{"columns":[{"name":"a","visibility":1}]}', []).privateNames,
+    ).toEqual(["a", "HappendAt", "InstanceId"]);
+    const both = privateAnswersFromLegacy('﻿[{"name":"q1","isPublic":true}]', layout, ["q1", "q2"]);
+    expect(both.publicNames).toEqual(["q1"]);
+    expect([...both.privateNames].sort()).toEqual(["HappendAt", "InstanceId", "q2"]);
+    expect(both.listedUnderPermissions).toEqual(new Set(["q1", "q2"]));
+  });
+
+  it("names each unreadable setting and keeps the rule of the other", () => {
+    const badList = privateAnswersFromLegacy("{}", layout, ["q1", "q2"]);
+    expect(badList.unreadable).toEqual(["permissions"]);
+    expect(badList.privateNames).toEqual(["HappendAt", "InstanceId"]);
+    const badLayout = privateAnswersFromLegacy('[{"name":"q1","isPublic":false}]', "[]", ["q1"]);
+    expect(badLayout.unreadable).toEqual(["columns"]);
+    expect(badLayout.privateNames).toEqual(["q1"]);
+    expect(privateAnswersFromLegacy("nope", "nope", []).unreadable).toEqual([
+      "permissions",
+      "columns",
+    ]);
   });
 });
 

@@ -4,7 +4,8 @@ Status: Accepted (hosted Step 9, 2026-11-25). Settles how the data of today's se
 the order set by [ADR 0042](0042-one-switch-to-the-new-server.md). Changes [ADR 0037](0037-access-keys-and-api-tokens.md)
 point 4 (revocations), [ADR 0043](0043-hosted-users-on-the-local-directory.md) point 6 (who is seeded, what `reconcile` removes) and the stale lines of spec-hosted.md (member ids, API tokens, licence notices). The commands and
 the operator's order of work are in [Operations › Hosted migration](../operations/hosted-migration.md). Changed
-2026-11-26: copy fidelity (points 2, 3, 5, 7 and 8), and verify as the go/no-go (point 6); see the end.
+2026-11-26: copy fidelity (points 2, 3, 5, 7 and 8), verify as the go/no-go (point 6), and the privacy rule (point 4);
+see the end.
 
 ## Context
 
@@ -71,25 +72,29 @@ after the pre-copy. Files nobody links stay behind in the old shares; a file the
 links any more is kept, and `verify` counts those as a note. Studio's own file container keeps
 its ids and surveys. A file whose bytes match no allowed type is stored as `application/octet-stream`.
 
-### 4. Privacy: hidden if either old rule hid it
+### 4. Privacy: the old public results' rule
 
-A survey's `private_questions` is the union of two sets, so nothing private becomes public on Studio's public page or
-through the bridge:
+A survey's `private_questions` follows the rule the old public results applied, so nothing the old public results hid
+becomes public on Studio's public page or through the bridge:
 
-- the questions its permissions setting marked not public;
-- the answer columns its saved column layout marked hidden or not public.
+- without a column layout, or with one listing no columns: the questions its permissions setting marked not public;
+- with a layout listing columns and no permissions setting: the answer columns the layout marked hidden or not public;
+- with both: every answer is private except those the permissions setting marked public **and** the layout lists (at
+  any visibility); answers added later, answers only responses hold, and the response time and id are private too
+  (see "Changed 2026-11-26: the privacy rule").
 
 While a copy or `delta` writes a survey's responses, the stored list only grows: before a batch brings an answer name
 the list was not computed with, the rule is applied to it, so no answer is public, even for a moment, that the finished
 copy hides.
 
-The old public results read the layout this way, and the tool keeps the rule. When the layout lists at least one
-column, every answer it does not list takes the layout's "new columns" visibility. The response time and response id
-columns are private when the layout hides them or does not list them. Answer names come from the definition (question,
-value and comment names) and, in the copy, from the response keys. An empty layout is no layout. If the permissions
-setting or the layout cannot be read, public results are turned off for that survey (`public_results` false) and it is
-reported; the owner can turn them on again. The layout itself is kept, with the other saved layouts, in
-`survey_layouts` (the bridge computes columns from it, [ADR 0040](0040-bridge-access-key-actions.md)).
+The old public results read a layout without a permissions setting this way, and the tool keeps the rule. When the
+layout lists at least one column, every answer it does not list takes the layout's "new columns" visibility. The
+response time and response id columns are private when the layout hides them or does not list them. Answer names come
+from the definition (question, value and comment names) and, in the copy, from the response keys. An empty layout is
+no layout. If the permissions setting or the layout cannot be read, public results are turned off for that survey
+(`public_results` false) and it is reported; the owner can turn them on again. The layout itself is kept, with the
+other saved layouts, in `survey_layouts` (the bridge computes columns from it,
+[ADR 0040](0040-bridge-access-key-actions.md)).
 
 ### 5. Projects, people and keys
 
@@ -337,3 +342,21 @@ would have blocked the window. Fixed, and recorded here (point 6 reads with thes
 - **A deletion copy without a time,** which the copy-fidelity change made the copy skip, is kept instead, deleted at
   its storage time, and noted (`deleted_copy_undated`): the deleted response's answers are kept nowhere else (point 8).
   `copy`, `delta`, `reconcile` and `verify` take it alike.
+
+## Changed 2026-11-26: the privacy rule
+
+Point 4 took the union of the two settings. The old public results did not: with a column layout listing columns and a
+permissions setting, only the answers the permissions marked public that the layout also lists were public, and
+everything else was hidden. The union kept some of those public. Decided by the product owner: match the old public
+results exactly (point 4 now says so). Example: a customer-feedback survey has the questions q1 and q2; its layout lists
+the response time, q1 and q2, all shown; its permissions, saved before q2 was added, mark q1 public. The old public
+results showed q1 only. The union kept q2 and the response time public too; the tool now keeps them private, and so
+would an answer only some responses hold.
+
+The rule applies to every permissions list, including those Studio wrote, which list only the private questions: with a
+layout listing columns, such a survey has no public answer, which is what the old public API answers for it today. Each
+survey whose public results are on and end with no public answer under this case is reported
+(`public_results_no_public_answer`, the survey id only), so the operator can tell its owner. The rule is one function
+of the column-layout package, shared by `copy`, `delta`, `reconcile` and `verify`, so `verify` cannot disagree with
+what the copy writes. Without a layout, a permissions list still hides its private entries, though the old public
+results then hid nothing: stricter, as before.

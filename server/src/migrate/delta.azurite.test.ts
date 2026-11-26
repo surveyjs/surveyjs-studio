@@ -655,6 +655,60 @@ describe("delta and reconcile: changes the marks alone do not show", () => {
     for (const names of stored) expect(names).toContain("secretanswer");
   }, 180_000);
 
+  it("applies the old rule to a permissions list changed under a layout: everything it does not make public is private, a new response-only answer before its batch", async () => {
+    const into = await freshCopy();
+    // The feedback survey has both settings; satisfaction alone is public.
+    expect([...(await into.target.privateQuestionsOf(FEEDBACK))].sort()).toEqual([
+      "HappendAt",
+      "InstanceId",
+      "receipt",
+    ]);
+    const fixture = fixtures.blobs.find(
+      (b) => b.container === "surveyresultpermissions" && b.name.toLowerCase() === FEEDBACK,
+    )!.content;
+    const added = "66666666-0000-4000-8000-a0000000d202";
+    try {
+      // The owner saves the list as Studio writes it (private entries only), and a response
+      // arrives with an answer the definition lacks: under the layout, neither is public.
+      await putBlob("surveyresultpermissions", FEEDBACK, '[{"name":"receipt","isPublic":false}]');
+      await results(FEEDBACK_TABLE).createEntity({
+        partitionKey: "*",
+        rowKey: added,
+        id: added,
+        happendat: new Date(),
+        result: JSON.stringify({ satisfaction: 3, extra_answer: "x" }),
+      });
+      /** The stored list each time a batch with the new answer is written. */
+      const seen: string[][] = [];
+      const watching: MigrationTarget = {
+        ...into.target,
+        upsertResponses: async (recs) => {
+          if (recs.some((rec) => "extra_answer" in rec.response.data)) {
+            seen.push([...(await into.target.privateQuestionsOf(FEEDBACK))]);
+          }
+          await into.target.upsertResponses(recs);
+        },
+      };
+      const report = createReport();
+      await run((source) => runDelta(source, watching, { report, marginMs: 0 }));
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toContain("extra_answer");
+      expect([...(await into.target.privateQuestionsOf(FEEDBACK))].sort()).toEqual([
+        "HappendAt",
+        "InstanceId",
+        "extra_answer",
+        "receipt",
+        "satisfaction",
+      ]);
+      expect(report.counts().public_results_no_public_answer).toBe(1);
+    } finally {
+      await putBlob("surveyresultpermissions", FEEDBACK, fixture.toString("utf8"));
+      await results(FEEDBACK_TABLE)
+        .deleteEntity("*", added)
+        .catch(() => undefined);
+    }
+  }, 180_000);
+
   it("removes the completion marker of a response deleted since the marks", async () => {
     const into = await freshCopy();
     expect(await into.target.keysOf("completion_markers", FEEDBACK)).toContain(CLIENT);

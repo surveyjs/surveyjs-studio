@@ -565,6 +565,35 @@ describe("verify against a copy of the local replica", () => {
     }
   });
 
+  it("computes the private questions by the old rule on the permissions and the layout: a weaker stored list is red", async () => {
+    const before = await copied.target.privateQuestionsOf(FEEDBACK);
+    // The feedback survey's permissions as Studio writes them (private entries only), under its
+    // layout: no answer stays public, satisfaction included.
+    const studioList = (source: LegacySource): LegacySource => ({
+      ...source,
+      async permissionsText(surveyId) {
+        if (surveyId.toLowerCase() === FEEDBACK) return '[{"name":"receipt","isPublic":false}]';
+        return source.permissionsText(surveyId);
+      },
+    });
+    try {
+      // The stored list as the union of both settings computed it: satisfaction public.
+      expect([...before].sort()).toEqual(["HappendAt", "InstanceId", "receipt"]);
+      const weaker = await verify({ deepSample: 0, wrap: studioList });
+      expect(weaker.ok).toBe(false);
+      expect(findings(weaker.json.differences, "private_questions")).toEqual([
+        expect.objectContaining({ ids: expect.objectContaining({ surveyId: FEEDBACK }) }),
+      ]);
+      // The list the copy writes under that rule: green.
+      await copied.target.setPrivateQuestions(FEEDBACK, [...before, "satisfaction"]);
+      const agreed = await verify({ deepSample: 0, wrap: studioList });
+      expect(agreed.json.differences).toEqual([]);
+      expect(agreed.ok).toBe(true);
+    } finally {
+      await copied.target.setPrivateQuestions(FEEDBACK, before);
+    }
+  });
+
   it("compares the small tables in full incrementally: a renamed survey is red", async () => {
     await setBaseline();
     const db = copied.database.db;
