@@ -14,7 +14,7 @@ import { API_TOKENS_TABLE } from "../providers/azure-legacy/writes.js";
 import type { ProviderSet } from "../providers/types.js";
 import type { DatabaseSchema } from "../sql/schema.js";
 import type { CopyOptions } from "./copy.js";
-import { runDelta } from "./delta.js";
+import { runDelta, WHOLE } from "./delta.js";
 import { createReport, type Report } from "./map/report.js";
 import { isCompleteMarks, MARKS_MARGIN_MS, type HighWaterMarks } from "./marks.js";
 import type { PersonRec, SurveyRec } from "./records.js";
@@ -728,7 +728,7 @@ describe("delta and reconcile: changes the marks alone do not show", () => {
     expect(await keysOf()).toEqual([]);
   }, 180_000);
 
-  it("takes the views, own files and (sample) events from before the marks of a survey delta copies whole", async () => {
+  it("takes the views, own files and (sample) events from before the marks of a survey delta copies whole, after a stopped run too", async () => {
     const campaignView = `${CAMPAIGN}/${MEMBER}/table`;
     const campaignFile = newFileId(CAMPAIGN);
     await putBlob(VIEWS, campaignView, '{"columns":[]}');
@@ -761,6 +761,30 @@ describe("delta and reconcile: changes the marks alone do not show", () => {
     const after = await sampleNow();
     expect(after.surveys.has(CAMPAIGN)).toBe(true);
 
+    // A first delta stops after the surveys phase (the event read fails): the survey and its
+    // checkpoint are written, its earlier views, files and events are not, the marks stay.
+    await expect(
+      run((source) => {
+        const failing = new Proxy(source, {
+          get: (held, key, receiver) =>
+            key === "events"
+              ? () => {
+                  throw new Error("the event read failed");
+                }
+              : (Reflect.get(held, key, receiver) as unknown),
+        });
+        return runDelta(failing, into.target, {
+          report: createReport(),
+          marginMs: 0,
+          sample: after,
+        });
+      }),
+    ).rejects.toThrow("the event read failed");
+    expect(await into.target.idsOf("surveys")).toContain(CAMPAIGN);
+    expect(await into.target.keysOf("saved_views", CAMPAIGN)).toEqual([]);
+    expect(await into.target.state.keys(WHOLE)).toContain(`${WHOLE}${CAMPAIGN}`);
+
+    // The next delta still takes them, though the survey is now in the target.
     await run((source) =>
       runDelta(source, into.target, { report: createReport(), marginMs: 0, sample: after }),
     );
@@ -774,6 +798,7 @@ describe("delta and reconcile: changes the marks alone do not show", () => {
       events: [String(transfer.RowKey).toLowerCase()],
       files: [campaignFile],
     });
+    expect(await into.target.state.keys(WHOLE)).toEqual([]);
   }, 240_000);
 
   it("forgets the checkpoint and permissions record of a survey it removes", async () => {

@@ -13,7 +13,9 @@
  * - events: by change time; legacy files: those the changed records newly link.
  * A survey the target lacks (new since the marks, or newly in the sample) is copied whole, and
  * its saved views, Studio's own files and, in a sample, its events are taken whatever their
- * time: what predates the marks was not the copy's when the survey was not copied.
+ * time: what predates the marks was not the copy's when the survey was not copied. Such a survey
+ * is recorded in the state (`delta:whole:{id}`) before it is copied and forgotten only after the
+ * files phase, so a run that stops after copying it still takes them in the next run.
  * A person written again whose source row holds no access key any more loses the stored one.
  * A changed survey is copied again through `copy`'s own per-survey functions (the mapping and the
  * privacy rule exist once). At the end the marks move forward to those taken at the start; a run
@@ -79,6 +81,11 @@ export interface ReconcileState {
 export const RECONCILE = "reconcile";
 
 export const CONCURRENCY = 16;
+/**
+ * State key `delta:whole:{id}`: a survey `delta` copies whole whose earlier views, files and
+ * (sample) events are not taken yet; the next run takes them if this one stops.
+ */
+export const WHOLE = "delta:whole:";
 /** The event the old app writes after deleting every response of a survey. */
 export const DELETE_ALL_EVENT = "SURVEY_DELETEALLRESULTS";
 
@@ -220,6 +227,8 @@ export async function runDelta(
   const migrated = new Set<string>();
   /** The surveys this run copied whole: their views, files and (sample) events of any time. */
   const whole = new Set<string>();
+  /** Surveys a stopped run copied whole without taking their views, files and events. */
+  const pendingWhole = new Set((await state.keys(WHOLE)).map((key) => key.slice(WHOLE.length)));
   const counts = { added: 0, documents: 0, rows: 0 };
   /** For a mapping already reported by the copy. */
   const quiet = createReport();
@@ -227,12 +236,16 @@ export async function runDelta(
   async function deltaSurvey(row: Parameters<typeof mapSurvey>[0]): Promise<void> {
     const surveyId = row.id.toLowerCase();
     if (!targetSurveys.has(surveyId)) {
-      // New since the marks (or not copied before): copied whole.
+      // New since the marks (or not copied before): copied whole. Recorded first, so a run
+      // that stops before the views, files and events phases leaves them to the next one.
+      await state.set(`${WHOLE}${surveyId}`, true, at());
       if (await copier.copySurvey(row)) {
         migrated.add(surveyId);
         whole.add(surveyId);
         counts.added += 1;
         report.note("delta_new_survey", { surveyId });
+      } else {
+        await state.delete(`${WHOLE}${surveyId}`);
       }
       return;
     }
@@ -257,6 +270,7 @@ export async function runDelta(
     const base = documents?.rec ?? mapSurvey(row, null, null, null, { ...ctx, report: quiet });
     if (base === null) return;
     migrated.add(surveyId);
+    if (pendingWhole.has(surveyId)) whole.add(surveyId);
 
     // The survey's texts, read at most once (the documents read them already).
     let texts: SurveyTexts | null = documents?.texts ?? null;
@@ -357,6 +371,11 @@ export async function runDelta(
     await copier.appFile(blob.blobName, record as SurveyFileRecord);
   }
   phase("files", "own files");
+  // Their views, files and events are taken: forgotten (those of a stopped run's too, whether
+  // copied again here or not).
+  for (const surveyId of new Set([...whole, ...pendingWhole])) {
+    await state.delete(`${WHOLE}${surveyId}`);
+  }
 
   // ---- The marks move forward; `reconcile` keeps the copy's until it runs ----
   if ((await state.get(RECONCILE)) === null) {

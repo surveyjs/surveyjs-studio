@@ -274,7 +274,9 @@ survey's answers were less private than the rule says. Fixed, and recorded here 
 - **A survey that enters through `delta`** (one newly in a sample, or one the copy skipped and that was corrected) was
   copied whole, but its saved views, Studio's own files and, in a sample, its events were read by change time only, so
   what predated the marks was lost. They are now taken whatever their time: the views by the survey's prefix, the files
-  from the file listing `delta` reads anyway, the events by one read of the whole log (a full copy took them all).
+  from the file listing `delta` reads anyway, the events by one read of the whole log (a full copy took them all). Such a
+  survey is recorded in the target before it is copied and forgotten after the files phase, so a `delta` that stops
+  after copying it leaves them to the next one.
 - **The interim private list.** When `delta` or `reconcile` rewrites a copied survey, the list stored until its new
   responses are read is now computed with the checkpoint's answer names too, so an answer only responses carry is
   private from the first write under a new layout, not only once the run finishes the survey.
